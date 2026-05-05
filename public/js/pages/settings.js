@@ -147,7 +147,7 @@ export async function render(container) {
                 <div>
                     <div class="list-item">
                         <span class="text-xs text-muted-foreground">Version</span>
-                        <span class="font-mono text-xs">1.0.0</span>
+                        <span class="font-mono text-xs" id="panelVersion">1.0.0</span>
                     </div>
                     <div class="list-item">
                         <span class="text-xs text-muted-foreground">Node.js</span>
@@ -157,6 +157,13 @@ export async function render(container) {
                         <span class="text-xs text-muted-foreground">Platform</span>
                         <span class="font-mono text-xs" id="platform"></span>
                     </div>
+                    <div class="list-item" id="updateRow" style="display:none">
+                        <span class="text-xs text-muted-foreground">Update</span>
+                        <span class="text-xs" id="updateInfo"></span>
+                    </div>
+                    <div class="mt-3 px-4 pb-3">
+                        <button class="btn btn-secondary btn-sm" id="checkUpdateBtn">Check for Updates</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -164,6 +171,47 @@ export async function render(container) {
     `;
 
     container.querySelector('#platform').textContent = navigator.platform;
+
+    // Load update status
+    api.get('/updates').then(status => {
+        if (status?.currentVersion) {
+            const versionEl = container.querySelector('#panelVersion');
+            if (versionEl) versionEl.textContent = status.currentVersion;
+        }
+        if (status?.updateAvailable) {
+            const row = container.querySelector('#updateRow');
+            const info = container.querySelector('#updateInfo');
+            if (row && info) {
+                row.style.display = '';
+                info.innerHTML = `<a href="${escapeHtml(status.releaseUrl || '#')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
+            }
+        }
+    }).catch(() => {});
+
+    // Check for updates button
+    container.querySelector('#checkUpdateBtn')?.addEventListener('click', async () => {
+        const btn = container.querySelector('#checkUpdateBtn');
+        btn.disabled = true;
+        btn.textContent = 'Checking...';
+        try {
+            const status = await api.post('/updates/check');
+            if (status?.updateAvailable) {
+                const row = container.querySelector('#updateRow');
+                const info = container.querySelector('#updateInfo');
+                if (row && info) {
+                    row.style.display = '';
+                    info.innerHTML = `<a href="${escapeHtml(status.releaseUrl || '#')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
+                }
+                showToast(`Update available: v${status.latestVersion}`, 'info');
+            } else {
+                showToast('You\'re on the latest version', 'success');
+            }
+        } catch (e) {
+            showToast('Failed to check for updates', 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = 'Check for Updates';
+    });
 
     // Change password
     container.querySelector('#changePasswordBtn')?.addEventListener('click', async () => {

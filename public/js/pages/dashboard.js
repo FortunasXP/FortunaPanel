@@ -67,10 +67,12 @@ export async function render(container) {
     let servers = [];
     let stats = null;
 
+    let updateStatus = null;
     try {
-        [servers, stats] = await Promise.all([
+        [servers, stats, updateStatus] = await Promise.all([
             api.get('/servers'),
-            api.get('/stats').catch(() => null)
+            api.get('/stats').catch(() => null),
+            api.get('/updates').catch(() => null)
         ]);
     } catch (e) {
         // API not ready
@@ -85,6 +87,23 @@ export async function render(container) {
     const memTotal = stats?.system?.memory?.total || 0;
     const uptime = stats?.system?.uptime || 0;
 
+    const updateBanner = (updateStatus?.updateAvailable) ? `
+            <div class="update-banner flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3" id="updateBanner">
+                <div class="flex items-center gap-3">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-400">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <div>
+                        <p class="text-sm font-medium text-foreground">Update available: <span class="text-emerald-400">v${escapeHtml(updateStatus.latestVersion)}</span></p>
+                        <p class="text-xs text-muted-foreground">You're running v${escapeHtml(updateStatus.currentVersion)}</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="${escapeHtml(updateStatus.releaseUrl || '#')}" target="_blank" rel="noopener" class="btn btn-primary btn-sm no-underline">View Release</a>
+                    <button class="btn btn-secondary btn-sm" id="dismissUpdate">Dismiss</button>
+                </div>
+            </div>` : '';
+
     container.innerHTML = `
         <section class="space-y-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -97,6 +116,8 @@ export async function render(container) {
                     New Server
                 </button>
             </div>
+
+            ${updateBanner}
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/50">
@@ -275,6 +296,12 @@ export async function render(container) {
 
     container.querySelectorAll('.server-list-item').forEach(item => {
         item.addEventListener('click', () => app.navigate(`/server/${encodeURIComponent(item.dataset.id)}`));
+    });
+
+    // Update banner dismiss
+    container.querySelector('#dismissUpdate')?.addEventListener('click', async () => {
+        await api.post('/updates/dismiss', { version: updateStatus?.latestVersion }).catch(() => {});
+        container.querySelector('#updateBanner')?.remove();
     });
 }
 

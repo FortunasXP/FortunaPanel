@@ -23,6 +23,7 @@ const NetworkManager = require('./managers/NetworkManager');
 const HealthMonitor = require('./managers/HealthMonitor');
 const DnsManager = require('./managers/DnsManager');
 const StatsCollector = require('./managers/StatsCollector');
+const UpdateChecker = require('./managers/UpdateChecker');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -147,6 +148,7 @@ networkManager.setHealthMonitor(healthMonitor);
 networkManager.setDnsManager(dnsManager);
 scheduler.networkManager = networkManager;
 const statsCollector = new StatsCollector(serverManager, systemMonitor);
+const updateChecker = new UpdateChecker();
 
 // Make managers available to routes
 app.locals.serverManager = serverManager;
@@ -167,6 +169,7 @@ app.locals.networkManager = networkManager;
 app.locals.healthMonitor = healthMonitor;
 app.locals.dnsManager = dnsManager;
 app.locals.statsCollector = statsCollector;
+app.locals.updateChecker = updateChecker;
 
 // API routes
 const api = express.Router();
@@ -193,6 +196,7 @@ api.use('/health', require('./routes/health'));
 api.use('/dns', require('./routes/dns'));
 api.use('/templates', require('./routes/templates'));
 api.use('/jobs', require('./routes/jobs'));
+api.use('/updates', require('./routes/updates'));
 
 app.use('/api', api);
 app.use('/api/v1', api);
@@ -274,6 +278,9 @@ async function start() {
 
     // Start stats collector
     statsCollector.start();
+
+    // Start update checker
+    updateChecker.start();
 
     // Start scheduler
     scheduler.start();
@@ -368,6 +375,7 @@ async function shutdown(signal) {
     logger.info(`Shutting down FortunaPanel (${signal})...`);
     try { healthMonitor.stop(); } catch (_) {}
     try { statsCollector.stop(); } catch (_) {}
+    try { updateChecker.stop(); } catch (_) {}
     try { scheduler.stop(); } catch (_) {}
     try { resourceLimiter.stop(); } catch (_) {}
     try { sftpServer.stop(); } catch (_) {}

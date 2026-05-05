@@ -799,6 +799,13 @@
 .info-bar-item { @apply text-xs text-muted-foreground; }
 .info-bar-label { @apply text-foreground; }
 
+/* ===== Update banner ===== */
+
+.update-banner {
+  border-color: hsl(160 60% 45% / 0.3);
+  background: hsl(160 60% 45% / 0.05);
+}
+
 /* ===== Grid helpers ===== */
 
 .grid-2 { @apply grid grid-cols-2 gap-4; }
