@@ -298,8 +298,8 @@ async function start() {
     // Enable console log persistence
     setupConsolePersistence(serverManager);
 
-    server.listen(config.port, () => {
-        logger.info(`FortunaPanel started on http://localhost:${config.port}`);
+    server.listen(config.port, config.host, () => {
+        logger.info(`FortunaPanel started on http://${config.host}:${config.port}`);
     });
 
     // Auto-start servers (skip suspended)

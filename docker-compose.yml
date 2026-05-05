@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  fortunapanel:
+    build: .
+    container_name: fortunapanel
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Web panel
+      - "2222:2222"   # SFTP (optional)
+      - "25565-25575:25565-25575"  # Minecraft server ports (adjust range as needed)
+    volumes:
+      - panel-data:/app/data
+      - panel-servers:/app/servers
+      - panel-logs:/app/logs
+    environment:
+      - JWT_SECRET=change-me-to-a-long-random-string
+      - PORT=3000
+      - MAX_SERVERS=10
+      - LOG_LEVEL=info
+
+volumes:
+  panel-data:
+  panel-servers:
+  panel-logs:

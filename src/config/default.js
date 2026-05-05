@@ -57,6 +57,7 @@ const jwtExpirySeconds = Math.min(requestedExpiry, JWT_MAX_SECONDS);
 
 module.exports = {
     port: parseInt(process.env.PORT) || 3000,
+    host: process.env.HOST || '0.0.0.0',
     jwtSecret: resolveJwtSecret(),
     jwtExpiry: `${jwtExpirySeconds}s`,
     jwtExpirySeconds,

@@ -14,8 +14,9 @@
     "electron": "electron .",
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "build": "npm run css:build && electron-builder --win",
+    "build:docker": "docker build -t fortunapanel .",
     "generate-icon": "node scripts/generate-icon.js",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node -e \"try{require('child_process').execSync('npx --no-install electron-builder install-app-deps',{stdio:'inherit'})}catch(e){}\""
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
