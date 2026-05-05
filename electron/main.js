@@ -28,19 +28,8 @@ if (app.isPackaged) {
             fs.mkdirSync(d, { recursive: true });
         }
 
-        // Seed bundled JSON defaults on first run only — never overwrite the
-        // user's modified copy. extraResources places templates in
-        // resources/data/.
-        const bundledData = path.join(process.resourcesPath, 'data');
-        if (fs.existsSync(bundledData)) {
-            for (const entry of fs.readdirSync(bundledData)) {
-                if (!entry.endsWith('.json')) continue;
-                const dest = path.join(dataDir, entry);
-                if (!fs.existsSync(dest)) {
-                    try { fs.copyFileSync(path.join(bundledData, entry), dest); } catch (_) {}
-                }
-            }
-        }
+        // Data directory is ready — the app creates its own config files
+        // (panel.db, servers.json, etc.) on first run. No seeding needed.
     } catch (e) {
         dialog.showErrorBox('FortunaPanel Error',
             `Could not create user data directories under:\n${userData}\n\n${e.message}`);
