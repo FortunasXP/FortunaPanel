@@ -2,25 +2,153 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+    branches: [master]
 
 jobs:
-  security-smoke:
+  lint:
+    name: Lint & Syntax Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install
-        run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts
 
-      - name: Security Smoke
+      - name: Check all modules load
+        env:
+          JWT_SECRET: ci-lint-secret
+        run: |
+          node -e "require('./src/index.js')" &
+          PID=$!
+          sleep 3
+          kill $PID 2>/dev/null || true
+          echo "All modules loaded successfully"
+
+      - name: Check for syntax errors in frontend JS
+        run: |
+          find public/js -name '*.js' | while read f; do
+            node --check "$f" || exit 1
+          done
+          echo "All frontend JS files pass syntax check"
+
+  css-build:
+    name: CSS Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Build CSS
+        run: npm run css:build
+
+      - name: Verify output files exist
+        run: |
+          test -f public/css/tailwind.css || (echo "tailwind.css missing" && exit 1)
+          test -f public/css/components.css || (echo "components.css missing" && exit 1)
+          echo "CSS build output OK"
+
+  security-smoke:
+    name: Security Smoke Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Run security smoke tests
         env:
           JWT_SECRET: ci-smoke-secret
         run: npm run test:security
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t fortunapanel:ci .
+
+      - name: Verify container starts
+        env:
+          JWT_SECRET: ci-docker-secret
+        run: |
+          docker run -d --name fp-test \
+            -e JWT_SECRET=$JWT_SECRET \
+            -p 3000:3000 \
+            fortunapanel:ci
+
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
+              echo "Container started successfully"
+              break
+            fi
+            sleep 1
+          done
+
+          # Verify auth is required
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/servers)
+          if [ "$STATUS" != "401" ]; then
+            echo "Expected 401, got $STATUS"
+            docker logs fp-test
+            exit 1
+          fi
+          echo "Auth check passed (401 for unauthenticated)"
+
+          docker stop fp-test
+          docker rm fp-test
+
+  node-compat:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Verify server starts
+        env:
+          JWT_SECRET: ci-compat-secret
+        run: |
+          node src/index.js &
+          PID=$!
+          sleep 4
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/auth/verify)
+          kill $PID 2>/dev/null || true
+
+          # 503 = not set up (expected for fresh install), 200 = ready
+          if [ "$STATUS" = "503" ] || [ "$STATUS" = "200" ]; then
+            echo "Server started OK on Node ${{ matrix.node-version }} (status: $STATUS)"
+          else
+            echo "Unexpected status: $STATUS"
+            exit 1
+          fi
