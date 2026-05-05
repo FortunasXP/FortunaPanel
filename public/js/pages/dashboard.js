@@ -2,7 +2,7 @@
 import { api } from '../api.js';
 import { ws } from '../websocket.js';
 import { app, escapeHtml } from '../app.js';
-import { drawChart as drawSharedChart } from '../components/chart.js';
+import { drawChart as drawSharedChart, getCSSColor } from '../components/chart.js';
 
 let statsListener = null;
 let serverStatusListener = null;
@@ -206,8 +206,8 @@ export async function render(container) {
     // Draw initial charts
     const cpuHistory = stats?.system?.cpu?.history || [];
     const memHistory = stats?.system?.memory?.history || [];
-    drawChart('cpuChart', cpuHistory, '#3b82f6');
-    drawChart('memChart', memHistory, '#a855f7');
+    drawChart('cpuChart', cpuHistory, getCSSColor('--chart-1', '#3b82f6'));
+    drawChart('memChart', memHistory, getCSSColor('--chart-2', '#a855f7'));
 
     // Subscribe to real-time stats
     ws.subscribeStats();
@@ -225,8 +225,8 @@ export async function render(container) {
             if (cpuChartVal) cpuChartVal.textContent = `${data.system.cpu.current}%`;
             if (memChartVal) memChartVal.textContent = `${data.system.memory.current}%`;
 
-            drawChart('cpuChart', data.system.cpu.history, '#3b82f6');
-            drawChart('memChart', data.system.memory.history, '#a855f7');
+            drawChart('cpuChart', data.system.cpu.history, getCSSColor('--chart-1', '#3b82f6'));
+            drawChart('memChart', data.system.memory.history, getCSSColor('--chart-2', '#a855f7'));
         }
     };
     ws.on('system-stats', statsListener);

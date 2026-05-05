@@ -1,20 +1,31 @@
 // FortunaPanel - Shared Chart Component
 
 /**
+ * Read a CSS custom property from :root and wrap it as hsl().
+ * Falls back to the provided default if the property is empty.
+ * @param {string} varName - e.g. '--chart-1'
+ * @param {string} fallback - fallback hex color
+ */
+export function getCSSColor(varName, fallback = '#888') {
+    const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return val ? `hsl(${val})` : fallback;
+}
+
+/**
  * Draw a line/area chart on a canvas element.
  * @param {string} canvasId - Canvas element ID
  * @param {number[]} data - Array of values
- * @param {string} color - Hex color for the line (e.g. '#fafafa')
+ * @param {string} color - Any valid CSS color string (hex, hsl, rgb, etc.)
  * @param {object} options - Optional settings
  * @param {number} options.maxValue - Max value for Y axis scaling (default: 100)
  * @param {boolean} options.showDot - Show current value dot (default: true)
- * @param {string} options.fillOpacity - Hex opacity for gradient fill (default: '18')
+ * @param {number} options.fillAlpha - Fill opacity 0-1 (default: 0.09)
  */
 export function drawChart(canvasId, data, color, options = {}) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
-    const { maxValue = 100, showDot = true, fillOpacity = '18' } = options;
+    const { maxValue = 100, showDot = true, fillAlpha = 0.09 } = options;
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -37,7 +48,7 @@ export function drawChart(canvasId, data, color, options = {}) {
     const max = maxValue || Math.max(1, ...data);
     const step = chartW / (data.length - 1);
 
-    // Area fill
+    // Area fill (uses globalAlpha for universal color format support)
     ctx.beginPath();
     ctx.moveTo(padding.left, padding.top + chartH);
     for (let i = 0; i < data.length; i++) {
@@ -49,10 +60,12 @@ export function drawChart(canvasId, data, color, options = {}) {
     ctx.closePath();
 
     const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
-    gradient.addColorStop(0, `${color}${fillOpacity}`);
+    gradient.addColorStop(0, color);
     gradient.addColorStop(1, 'transparent');
+    ctx.globalAlpha = fillAlpha;
     ctx.fillStyle = gradient;
     ctx.fill();
+    ctx.globalAlpha = 1;
 
     // Line
     ctx.beginPath();

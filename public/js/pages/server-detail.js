@@ -899,12 +899,12 @@ async function renderStatsTab(content, params) {
 
         // Draw charts
         const maxPlayers = Math.max(1, peakPlayers);
-        drawChart('statsPlayersChart', playerData, '#d4d4d8', { maxValue: maxPlayers, showDot: true, fillOpacity: '20' });
-        drawChart('statsTpsChart', tpsData, '#a1a1aa', { maxValue: 20, showDot: true, fillOpacity: '18' });
-        drawChart('statsUptimeChart', uptimeData, '#71717a', { maxValue: 1, showDot: false, fillOpacity: '30' });
+        drawChart('statsPlayersChart', playerData, '#d4d4d8', { maxValue: maxPlayers, showDot: true, fillAlpha: 0.12 });
+        drawChart('statsTpsChart', tpsData, '#a1a1aa', { maxValue: 20, showDot: true, fillAlpha: 0.09 });
+        drawChart('statsUptimeChart', uptimeData, '#71717a', { maxValue: 1, showDot: false, fillAlpha: 0.19 });
 
         // Timeline: use player data again with a different color for visual variety
-        drawChart('statsTimelineChart', playerData, '#52525b', { maxValue: maxPlayers, showDot: false, fillOpacity: '15' });
+        drawChart('statsTimelineChart', playerData, '#52525b', { maxValue: maxPlayers, showDot: false, fillAlpha: 0.08 });
 
         // Wire range buttons
         content.querySelectorAll('[data-range]').forEach(btn => {

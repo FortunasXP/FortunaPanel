@@ -12,7 +12,7 @@ class SystemMonitor extends EventEmitter {
             memory: [],
             timestamps: []
         };
-        this.serverHistory = new Map(); // serverId -> { cpu: [], memory: [] }
+        this.serverHistory = new Map(); // serverId -> { cpu: [], players: [] }
         this._prevCpuInfo = null;
         this._interval = null;
     }
@@ -82,24 +82,22 @@ class SystemMonitor extends EventEmitter {
             this.history.timestamps.shift();
         }
 
-        // Per-server stats (memory via pid if running)
+        // Per-server stats (player count history)
         if (this.serverManager) {
             for (const server of this.serverManager.servers.values()) {
                 if (!this.serverHistory.has(server.id)) {
-                    this.serverHistory.set(server.id, { memory: [], cpu: [] });
+                    this.serverHistory.set(server.id, { players: [], cpu: [] });
                 }
                 const sh = this.serverHistory.get(server.id);
 
                 if (server.status === 'running' && server.pid) {
-                    // We can't easily get per-process CPU on windows without external tools
-                    // so we'll track uptime and basic info
-                    sh.memory.push(server.players.size); // Use player count as a lightweight metric
+                    sh.players.push(server.players.size);
                 } else {
-                    sh.memory.push(0);
+                    sh.players.push(0);
                 }
 
-                if (sh.memory.length > HISTORY_LENGTH) {
-                    sh.memory.shift();
+                if (sh.players.length > HISTORY_LENGTH) {
+                    sh.players.shift();
                 }
             }
         }
@@ -139,7 +137,7 @@ class SystemMonitor extends EventEmitter {
     }
 
     getServerStats(serverId) {
-        return this.serverHistory.get(serverId) || { memory: [], cpu: [] };
+        return this.serverHistory.get(serverId) || { players: [], cpu: [] };
     }
 }
 
