@@ -1,0 +1,772 @@
+// FortunaPanel - Settings Page
+import { api } from '../api.js';
+import { showToast, showModal, escapeHtml } from '../app.js';
+
+export function breadcrumbs() {
+    return [{ label: 'Settings', href: '/settings' }];
+}
+
+export async function render(container) {
+    let notifSettings = null;
+    try {
+        notifSettings = await api.get('/notifications/settings');
+    } catch (e) {}
+
+    container.innerHTML = `
+        <section class="settings-section">
+        <div class="flex w-full flex-col gap-6">
+            <!-- Change Password Section -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Change Password</h2>
+                    <p class="settings-card-desc">Update your admin account password</p>
+                </div>
+                <div class="settings-card-body">
+                    <div class="form-group">
+                        <label class="form-label">Current Password</label>
+                        <input type="password" class="form-input" id="currentPassword" placeholder="Enter current password">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">New Password</label>
+                        <input type="password" class="form-input" id="newPassword" placeholder="Enter new password">
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-input" id="confirmPassword" placeholder="Confirm new password">
+                    </div>
+                </div>
+                <div class="settings-card-footer">
+                    <button class="btn btn-primary btn-sm" id="changePasswordBtn">Update Password</button>
+                </div>
+            </div>
+
+            <!-- Discord Notifications -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Discord Notifications</h2>
+                    <p class="settings-card-desc">Send event notifications to a Discord channel</p>
+                </div>
+                <div class="settings-card-body">
+                    <div class="form-group">
+                        <label class="form-label flex cursor-pointer items-center gap-2 text-foreground">
+                            <input type="checkbox" id="discordEnabled" ${notifSettings?.discord?.enabled ? 'checked' : ''} class="accent-white">
+                            Enable Discord notifications
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Webhook URL</label>
+                        <input type="text" class="form-input" id="webhookUrl" value="${notifSettings?.discord?.webhookUrl || ''}" placeholder="https://discord.com/api/webhooks/...">
+                    </div>
+                    <div class="section-title mb-3">Events</div>
+                    <div class="flex flex-col gap-2">
+                        ${renderEventToggle('serverStart', 'Server Start', notifSettings?.discord?.events?.serverStart)}
+                        ${renderEventToggle('serverStop', 'Server Stop', notifSettings?.discord?.events?.serverStop)}
+                        ${renderEventToggle('serverCrash', 'Server Crash', notifSettings?.discord?.events?.serverCrash)}
+                        ${renderEventToggle('playerJoin', 'Player Join', notifSettings?.discord?.events?.playerJoin)}
+                        ${renderEventToggle('playerLeave', 'Player Leave', notifSettings?.discord?.events?.playerLeave)}
+                        ${renderEventToggle('backupComplete', 'Backup Complete', notifSettings?.discord?.events?.backupComplete)}
+                        ${renderEventToggle('scheduledTask', 'Scheduled Task', notifSettings?.discord?.events?.scheduledTask)}
+                    </div>
+                </div>
+                <div class="settings-card-footer settings-card-footer-split">
+                    <button class="btn btn-secondary btn-sm" id="testWebhook">Test Webhook</button>
+                    <button class="btn btn-primary btn-sm" id="saveNotifications">Save Notifications</button>
+                </div>
+            </div>
+
+            <!-- DNS Providers -->
+            <div class="settings-card">
+                <div class="settings-card-header settings-card-header-row">
+                    <div>
+                        <h2 class="settings-card-title">DNS Providers</h2>
+                        <p class="settings-card-desc">Manage DNS providers for automatic record management</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="addDnsProvider">Add Provider</button>
+                </div>
+                <div id="dnsProviderList">
+                    <div class="page-loading p-5"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- User Management -->
+            <div class="settings-card">
+                <div class="settings-card-header settings-card-header-row">
+                    <div>
+                        <h2 class="settings-card-title">User Management</h2>
+                        <p class="settings-card-desc">Manage panel users and roles</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="addUser">Add User</button>
+                </div>
+                <div id="userList">
+                    <div class="page-loading p-5"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- Two-Factor Authentication -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Two-Factor Authentication</h2>
+                    <p class="settings-card-desc">Secure your account with TOTP-based 2FA</p>
+                </div>
+                <div id="twoFactorContent" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- API Keys -->
+            <div class="settings-card">
+                <div class="settings-card-header settings-card-header-row">
+                    <div>
+                        <h2 class="settings-card-title">API Keys</h2>
+                        <p class="settings-card-desc">Create keys for external integrations</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="createApiKey">Create Key</button>
+                </div>
+                <div id="apiKeyList">
+                    <div class="page-loading p-5"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- SFTP Access -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">SFTP Access</h2>
+                    <p class="settings-card-desc">File transfer via SFTP protocol</p>
+                </div>
+                <div id="sftpStatus" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- Panel Information Section -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Panel Information</h2>
+                    <p class="settings-card-desc">System and runtime details</p>
+                </div>
+                <div>
+                    <div class="list-item">
+                        <span class="text-xs text-muted-foreground">Version</span>
+                        <span class="font-mono text-xs">1.0.0</span>
+                    </div>
+                    <div class="list-item">
+                        <span class="text-xs text-muted-foreground">Node.js</span>
+                        <span class="font-mono text-xs" id="nodeVersion">N/A</span>
+                    </div>
+                    <div class="list-item">
+                        <span class="text-xs text-muted-foreground">Platform</span>
+                        <span class="font-mono text-xs" id="platform"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </section>
+    `;
+
+    container.querySelector('#platform').textContent = navigator.platform;
+
+    // Change password
+    container.querySelector('#changePasswordBtn')?.addEventListener('click', async () => {
+        const current = container.querySelector('#currentPassword').value;
+        const newPass = container.querySelector('#newPassword').value;
+        const confirm = container.querySelector('#confirmPassword').value;
+
+        if (!current || !newPass) {
+            showToast('Please fill in all fields', 'error');
+            return;
+        }
+        if (newPass !== confirm) {
+            showToast('Passwords do not match', 'error');
+            return;
+        }
+        if (newPass.length < 6) {
+            showToast('Password must be at least 6 characters', 'error');
+            return;
+        }
+
+        try {
+            await api.post('/auth/change-password', { currentPassword: current, newPassword: newPass });
+            showToast('Password changed successfully', 'success');
+            container.querySelector('#currentPassword').value = '';
+            container.querySelector('#newPassword').value = '';
+            container.querySelector('#confirmPassword').value = '';
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    // Save notification settings
+    container.querySelector('#saveNotifications')?.addEventListener('click', async () => {
+        const events = {};
+        container.querySelectorAll('[data-event]').forEach(input => {
+            events[input.dataset.event] = input.checked;
+        });
+
+        const settings = {
+            discord: {
+                enabled: container.querySelector('#discordEnabled').checked,
+                webhookUrl: container.querySelector('#webhookUrl').value,
+                events
+            }
+        };
+
+        try {
+            await api.put('/notifications/settings', settings);
+            showToast('Notification settings saved', 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    // Test webhook
+    container.querySelector('#testWebhook')?.addEventListener('click', async () => {
+        const url = container.querySelector('#webhookUrl').value;
+        if (!url) {
+            showToast('Enter a webhook URL first', 'error');
+            return;
+        }
+        try {
+            await api.post('/notifications/test', { webhookUrl: url });
+            showToast('Test notification sent!', 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    // Load users
+    loadUsers(container);
+
+    // Load 2FA status
+    load2FA(container);
+
+    // Load API keys
+    loadApiKeys(container);
+
+    // Load SFTP status
+    loadSFTP(container);
+
+    // Load DNS providers
+    loadDnsProviders(container);
+
+    // Add DNS provider
+    container.querySelector('#addDnsProvider')?.addEventListener('click', () => {
+        showModal('Add DNS Provider', `
+            <div class="form-group">
+                <label class="form-label">Provider Name</label>
+                <input type="text" class="form-input" id="dnsProviderName" placeholder="e.g., My Cloudflare">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Provider Type</label>
+                <select class="form-select" id="dnsProviderType">
+                    <option value="cloudflare">Cloudflare</option>
+                    <option value="route53">AWS Route53</option>
+                </select>
+            </div>
+            <div id="dnsCredFields">
+                <div class="form-group">
+                    <label class="form-label">API Token</label>
+                    <input type="password" class="form-input" id="dnsApiToken" placeholder="Cloudflare API token">
+                </div>
+                <div class="form-group mb-0">
+                    <label class="form-label">Zone ID</label>
+                    <input type="text" class="form-input" id="dnsZoneId" placeholder="Cloudflare Zone ID">
+                </div>
+            </div>
+        `, [
+            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+            { id: 'add', label: 'Add Provider', class: 'btn-primary', onClick: async () => {
+                const type = document.querySelector('#dnsProviderType').value;
+                const name = document.querySelector('#dnsProviderName').value;
+                let credentials = {};
+                if (type === 'cloudflare') {
+                    credentials = {
+                        apiToken: document.querySelector('#dnsApiToken')?.value,
+                        zoneId: document.querySelector('#dnsZoneId')?.value
+                    };
+                } else {
+                    credentials = {
+                        accessKeyId: document.querySelector('#dnsAccessKey')?.value,
+                        secretAccessKey: document.querySelector('#dnsSecretKey')?.value,
+                        hostedZoneId: document.querySelector('#dnsHostedZone')?.value
+                    };
+                }
+                try {
+                    await api.post('/dns/providers', { name, type, credentials });
+                    showToast('DNS provider added', 'success');
+                    loadDnsProviders(container);
+                } catch (e) { showToast(e.message, 'error'); }
+            }}
+        ]);
+
+        // Switch credential fields based on type
+        document.querySelector('#dnsProviderType')?.addEventListener('change', (e) => {
+            const fields = document.querySelector('#dnsCredFields');
+            if (!fields) return;
+            if (e.target.value === 'cloudflare') {
+                fields.innerHTML = `
+                    <div class="form-group">
+                        <label class="form-label">API Token</label>
+                        <input type="password" class="form-input" id="dnsApiToken" placeholder="Cloudflare API token">
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Zone ID</label>
+                        <input type="text" class="form-input" id="dnsZoneId" placeholder="Cloudflare Zone ID">
+                    </div>
+                `;
+            } else {
+                fields.innerHTML = `
+                    <div class="form-group">
+                        <label class="form-label">Access Key ID</label>
+                        <input type="text" class="form-input" id="dnsAccessKey" placeholder="AWS Access Key ID">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Secret Access Key</label>
+                        <input type="password" class="form-input" id="dnsSecretKey" placeholder="AWS Secret Access Key">
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Hosted Zone ID</label>
+                        <input type="text" class="form-input" id="dnsHostedZone" placeholder="Route53 Hosted Zone ID">
+                    </div>
+                `;
+            }
+        });
+    });
+
+    // Create API key
+    container.querySelector('#createApiKey')?.addEventListener('click', () => {
+        showModal('Create API Key', `
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input type="text" class="form-input" id="apiKeyDesc" placeholder="e.g., Discord Bot Integration">
+            </div>
+                    <div class="form-group mb-0">
+                <label class="form-label">Key Type</label>
+                <select class="form-select" id="apiKeyType">
+                    <option value="client">Client - Limited access</option>
+                    <option value="application">Application - Full admin access</option>
+                </select>
+            </div>
+        `, [
+            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+            { id: 'create', label: 'Create Key', class: 'btn-primary', onClick: async () => {
+                const description = document.querySelector('#apiKeyDesc')?.value;
+                const type = document.querySelector('#apiKeyType')?.value;
+                try {
+                    const result = await api.post('/keys', { description, type });
+                    showModal('API Key Created', `
+                        <p class="mb-3 text-xs text-muted-foreground">Copy this key now. It will not be shown again.</p>
+                        <div class="select-all break-all rounded-lg border border-border bg-muted p-3 font-mono text-[11px]">${escapeHtml(result.key)}</div>
+                    `, [{ id: 'done', label: 'Done', class: 'btn-primary' }]);
+                    loadApiKeys(container);
+                } catch (e) { showToast(e.message, 'error'); }
+            }}
+        ]);
+    });
+
+    // Add user
+    container.querySelector('#addUser')?.addEventListener('click', () => {
+        showModal('Add User', `
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" class="form-input" id="newUsername" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="newUserPassword" placeholder="Min 6 characters">
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Role</label>
+                <select class="form-select" id="newUserRole">
+                    <option value="viewer">Viewer - Read-only access</option>
+                    <option value="operator">Operator - Can manage servers</option>
+                    <option value="admin">Admin - Full access</option>
+                </select>
+            </div>
+        `, [
+            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+            { id: 'create', label: 'Create User', class: 'btn-primary', onClick: async () => {
+                const username = document.querySelector('#newUsername')?.value;
+                const password = document.querySelector('#newUserPassword')?.value;
+                const role = document.querySelector('#newUserRole')?.value;
+                if (!username || !password) {
+                    showToast('Username and password required', 'error');
+                    return;
+                }
+                try {
+                    await api.post('/auth/users', { username, password, role });
+                    showToast(`User ${username} created`, 'success');
+                    loadUsers(container);
+                } catch (e) { showToast(e.message, 'error'); }
+            }}
+        ]);
+    });
+}
+
+async function loadUsers(container) {
+    const userList = container.querySelector('#userList');
+    if (!userList) return;
+
+    try {
+        const data = await api.get('/auth/users');
+        const users = data.users || [];
+
+        userList.innerHTML = users.map((u) => {
+            const roleClasses = {
+                admin: 'border-border text-foreground',
+                operator: 'border-border text-muted-foreground',
+                viewer: 'border-border text-muted-foreground'
+            };
+            return `
+                <div class="list-item">
+                    <div class="flex items-center gap-2.5">
+                        <div class="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-muted text-[11px] font-semibold">${escapeHtml(u.username.charAt(0).toUpperCase())}</div>
+                        <div>
+                            <div class="text-sm font-medium text-foreground">${escapeHtml(u.username)}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="rounded-full border px-2 py-0.5 text-[11px] capitalize ${roleClasses[u.role] || 'border-border text-muted-foreground'}">${escapeHtml(u.role)}</span>
+                        ${u.role !== 'admin' || users.filter(x => x.role === 'admin').length > 1 ? `
+                            <button class="btn btn-sm btn-danger" data-delete-user="${escapeHtml(u.username)}">Remove</button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Wire delete buttons
+        userList.querySelectorAll('[data-delete-user]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const username = btn.dataset.deleteUser;
+                showModal('Remove User', `<p>Remove user <strong>${escapeHtml(username)}</strong>? They will no longer be able to log in.</p>`, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'delete', label: 'Remove', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/auth/users/${encodeURIComponent(username)}`);
+                            showToast(`User ${username} removed`, 'success');
+                            loadUsers(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
+            });
+        });
+    } catch (e) {
+        userList.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function load2FA(container) {
+    const content = container.querySelector('#twoFactorContent');
+    if (!content) return;
+
+    try {
+        const status = await api.get('/2fa/status');
+        if (status.enabled) {
+            content.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <div class="h-2 w-2 rounded-full bg-foreground"></div>
+                        <span class="text-sm font-medium text-foreground">2FA is enabled</span>
+                    </div>
+                    <button class="btn btn-danger btn-sm" id="disable2FA">Disable</button>
+                </div>
+            `;
+            content.querySelector('#disable2FA')?.addEventListener('click', () => {
+                showModal('Disable 2FA', `
+                    <p class="mb-3 text-sm text-foreground">Enter your current 2FA code to disable.</p>
+                    <div class="form-group mb-0">
+                        <input type="text" class="form-input text-center text-lg tracking-[0.3em]" id="disable2FACode" placeholder="6-digit code" maxlength="8">
+                    </div>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'disable', label: 'Disable 2FA', class: 'btn-danger', onClick: async () => {
+                        const code = document.querySelector('#disable2FACode')?.value;
+                        try {
+                            await api.post('/2fa/disable', { code });
+                            showToast('2FA disabled', 'success');
+                            load2FA(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
+            });
+        } else {
+            content.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="text-sm text-foreground">2FA is not enabled</span>
+                        <div class="mt-0.5 text-xs text-muted-foreground">Use an authenticator app like Google Authenticator or Authy</div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="setup2FA">Enable 2FA</button>
+                </div>
+            `;
+            content.querySelector('#setup2FA')?.addEventListener('click', async () => {
+                try {
+                    const result = await api.post('/2fa/setup');
+                    showModal('Setup Two-Factor Authentication', `
+                        <p class="mb-4 text-xs text-muted-foreground">Scan this QR code with your authenticator app, then enter the 6-digit code below.</p>
+                        ${result.qrCode ? `<div class="mb-4 text-center"><img src="${result.qrCode}" class="mx-auto h-[200px] w-[200px] rounded-lg border border-border bg-white p-1"></div>` : ''}
+                        <div class="mb-4 select-all rounded-lg border border-border bg-muted p-2.5 text-center font-mono text-xs tracking-[0.2em]">${result.secret}</div>
+                        <div class="form-group mb-0">
+                            <label class="form-label">Verification Code</label>
+                            <input type="text" class="form-input text-center text-lg tracking-[0.3em]" id="verify2FACode" placeholder="Enter 6-digit code" maxlength="6">
+                        </div>
+                    `, [
+                        { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                        { id: 'verify', label: 'Verify & Enable', class: 'btn-primary', onClick: async () => {
+                            const code = document.querySelector('#verify2FACode')?.value;
+                            try {
+                                const verifyResult = await api.post('/2fa/verify', { code });
+                                if (verifyResult.backupCodes) {
+                                    showModal('Backup Codes', `
+                                        <p class="mb-3 text-xs text-muted-foreground">Save these backup codes somewhere safe. Each can be used once.</p>
+                                        <div class="grid grid-cols-2 gap-1.5 rounded-lg border border-border bg-muted p-3 font-mono text-sm">
+                                            ${verifyResult.backupCodes.map(c => `<div class="select-all">${c}</div>`).join('')}
+                                        </div>
+                                    `, [{ id: 'done', label: 'I Saved These', class: 'btn-primary' }]);
+                                }
+                                showToast('2FA enabled!', 'success');
+                                load2FA(container);
+                            } catch (e) { showToast(e.message, 'error'); }
+                        }}
+                    ]);
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        }
+    } catch (e) {
+        content.innerHTML = `<span class="text-xs text-muted-foreground">${escapeHtml(e.message)}</span>`;
+    }
+}
+
+async function loadApiKeys(container) {
+    const list = container.querySelector('#apiKeyList');
+    if (!list) return;
+
+    try {
+        const data = await api.get('/keys');
+        const keys = data.keys || [];
+
+        if (keys.length === 0) {
+            list.innerHTML = '<div class="px-5 py-4 text-xs text-muted-foreground">No API keys created yet</div>';
+            return;
+        }
+
+        list.innerHTML = keys.map((k) => `
+            <div class="list-item">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium text-foreground">${escapeHtml(k.description)}</span>
+                        <span class="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">${escapeHtml(k.type)}</span>
+                        ${!k.enabled ? '<span class="rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-foreground">disabled</span>' : ''}
+                    </div>
+                    <div class="mt-0.5 font-mono text-[11px] text-muted-foreground">${escapeHtml(k.keyPrefix)}</div>
+                    <div class="mt-0.5 text-[10px] text-muted-foreground">${k.lastUsed ? 'Last used: ' + new Date(k.lastUsed).toLocaleDateString() : 'Never used'} &middot; ${k.usageCount} requests</div>
+                </div>
+                <div class="flex flex-shrink-0 gap-1.5">
+                    <button class="btn btn-sm btn-secondary" data-toggle-key="${escapeHtml(k.id)}">${k.enabled ? 'Disable' : 'Enable'}</button>
+                    <button class="btn btn-sm btn-danger" data-delete-key="${escapeHtml(k.id)}">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
+        list.querySelectorAll('[data-toggle-key]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    await api.post(`/keys/${btn.dataset.toggleKey}/toggle`);
+                    loadApiKeys(container);
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        });
+
+        list.querySelectorAll('[data-delete-key]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    await api.del(`/keys/${btn.dataset.deleteKey}`);
+                    showToast('API key deleted', 'success');
+                    loadApiKeys(container);
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        });
+    } catch (e) {
+        list.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function loadDnsProviders(container) {
+    const list = container.querySelector('#dnsProviderList');
+    if (!list) return;
+
+    try {
+        const providers = await api.get('/dns/providers');
+
+        if (!providers || providers.length === 0) {
+            list.innerHTML = '<div class="px-5 py-4 text-xs text-muted-foreground">No DNS providers configured yet</div>';
+            return;
+        }
+
+        list.innerHTML = providers.map(p => {
+            const typeBadge = p.type === 'cloudflare' ? 'Cloudflare' : 'Route53';
+            return `
+                <div class="list-item">
+                    <div class="flex items-center gap-2.5">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-foreground">${escapeHtml(p.name)}</span>
+                                <span class="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">${escapeHtml(typeBadge)}</span>
+                            </div>
+                            <div class="mt-0.5 text-[11px] text-muted-foreground">ID: ${escapeHtml(p.id)}</div>
+                        </div>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button class="btn btn-sm btn-secondary" data-test-dns="${escapeHtml(p.id)}">Test</button>
+                        <button class="btn btn-sm btn-danger" data-delete-dns="${escapeHtml(p.id)}">Delete</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Wire test buttons
+        list.querySelectorAll('[data-test-dns]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                btn.textContent = 'Testing...';
+                try {
+                    const result = await api.post(`/dns/providers/${btn.dataset.testDns}/test`);
+                    if (result.success) {
+                        showToast('Connection successful!', 'success');
+                    } else {
+                        showToast(`Connection failed: ${result.error}`, 'error');
+                    }
+                } catch (e) { showToast(e.message, 'error'); }
+                btn.disabled = false;
+                btn.textContent = 'Test';
+            });
+        });
+
+        // Wire delete buttons
+        list.querySelectorAll('[data-delete-dns]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                showModal('Delete DNS Provider', `
+                    <p>Delete this DNS provider? Networks using this provider will lose DNS management.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/dns/providers/${btn.dataset.deleteDns}`);
+                            showToast('DNS provider deleted', 'success');
+                            loadDnsProviders(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
+            });
+        });
+    } catch (e) {
+        list.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function loadSFTP(container) {
+    const content = container.querySelector('#sftpStatus');
+    if (!content) return;
+
+    try {
+        const status = await api.get('/sftp/status');
+        content.innerHTML = `
+            <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-2">
+                    <div class="h-2 w-2 rounded-full ${status.running ? 'bg-foreground' : 'bg-muted-foreground'}"></div>
+                    <span class="text-sm font-medium text-foreground">${status.running ? 'SFTP Server Running' : 'SFTP Server Offline'}</span>
+                </div>
+                ${status.running ? `
+                    <div class="text-xs text-muted-foreground">
+                        <div class="mb-1.5">Port: <span class="font-mono text-foreground">${status.port}</span></div>
+                        <div class="mb-1.5">Active connections: <span class="text-foreground">${status.connections}</span></div>
+                        <div class="mb-2">Connect with: <code class="text-[11px] text-foreground">sftp -P ${status.port} username.serverId@hostname</code></div>
+                        <div class="rounded-lg border border-border bg-muted p-2.5 text-[11px] text-muted-foreground">
+                            <div class="mb-1 font-medium text-foreground">Connection Format:</div>
+                            <div>&bull; <code>user.serverId@host</code> - Access specific server files</div>
+                            <div>&bull; <code>admin@host</code> - Admin access to all servers</div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="text-xs text-muted-foreground">SFTP server is not running. Check server logs for errors.</div>
+                `}
+            </div>
+        `;
+    } catch (e) {
+        content.innerHTML = `<span class="text-xs text-muted-foreground">${escapeHtml(e.message)}</span>`;
+    }
+}
+
+function renderEventToggle(key, label, checked) {
+    return `
+        <label class="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+            <input type="checkbox" data-event="${key}" ${checked ? 'checked' : ''} class="accent-white">
+            ${label}
+        </label>
+    `;
+}
+
+export function destroy() {
+    if (openDialogCleanup) {
+        openDialogCleanup();
+        openDialogCleanup = null;
+    }
+}
+
+let openDialogCleanup = null;
+
+export function openSettingsDialog() {
+    if (openDialogCleanup) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'settings-dialog-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'settingsDialogTitle');
+    overlay.innerHTML = `
+        <div class="settings-dialog" role="document">
+            <div class="settings-dialog-header">
+                <div>
+                    <h2 id="settingsDialogTitle" class="settings-dialog-title">Settings</h2>
+                    <p class="settings-dialog-subtitle">Manage your panel configuration</p>
+                </div>
+                <button class="settings-dialog-close" aria-label="Close" type="button">&times;</button>
+            </div>
+            <div class="settings-dialog-body">
+                <div class="page-loading p-5"><div class="spinner"></div></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const body = overlay.querySelector('.settings-dialog-body');
+    const closeBtn = overlay.querySelector('.settings-dialog-close');
+
+    const close = () => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        openDialogCleanup = null;
+    };
+    const onKey = (e) => {
+        if (e.key === 'Escape' && !document.querySelector('.modal-overlay.active')) {
+            close();
+        }
+    };
+
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKey);
+
+    openDialogCleanup = close;
+
+    // Defer render so the overlay is mounted before any nested work runs
+    requestAnimationFrame(() => {
+        render(body).catch((e) => {
+            body.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e?.message || 'Failed to load settings')}</div>`;
+        });
+    });
+
+    return close;
+}

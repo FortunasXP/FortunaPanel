@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FortunaPanel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/tailwind.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body class="dark antialiased min-h-screen bg-background">
+    <div class="grid min-h-screen lg:grid-cols-2">
+
+        <!-- Left: form -->
+        <div class="flex flex-col gap-4 p-6 md:p-10">
+            <!-- Brand -->
+            <div class="flex justify-center gap-2 md:justify-start">
+                <a href="/" class="flex items-center gap-2 font-medium">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                            <polyline points="4 17 10 11 4 5"/>
+                            <line x1="12" y1="19" x2="20" y2="19"/>
+                        </svg>
+                    </div>
+                    <span class="font-semibold">FortunaPanel</span>
+                </a>
+            </div>
+
+            <!-- Form container -->
+            <div class="flex flex-1 items-center justify-center">
+                <div class="w-full max-w-sm motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-500">
+
+                    <!-- Heading -->
+                    <div class="flex flex-col items-center gap-2 text-center">
+                        <h1 class="text-2xl font-bold tracking-tight" id="heading">Welcome back</h1>
+                        <p class="text-sm text-muted-foreground text-balance" id="subtitle">
+                            Sign in to your FortunaPanel to manage your Minecraft servers.
+                        </p>
+                    </div>
+
+                    <!-- Form -->
+                    <form id="loginForm" class="mt-6 grid gap-5">
+
+                        <!-- Username -->
+                        <div class="grid gap-2">
+                            <label for="username" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Username</label>
+                            <input type="text" id="username" name="username" autocomplete="username" placeholder="admin" required
+                                   class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+                        </div>
+
+                        <!-- Password -->
+                        <div class="grid gap-2">
+                            <div class="flex items-center">
+                                <label for="password" class="text-sm font-medium leading-none">Password</label>
+                                <span id="passwordHint" class="ml-auto text-xs text-muted-foreground hidden">Must be at least 6 characters</span>
+                            </div>
+                            <div class="relative">
+                                <input type="password" id="password" name="password" autocomplete="current-password" placeholder="Enter your password" required
+                                       class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pr-9 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+                                <button type="button" id="togglePw" aria-label="Show password"
+                                        class="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground bg-transparent border-0 cursor-pointer">
+                                    <svg id="eyeIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 2FA (hidden unless needed) -->
+                        <div class="grid gap-2 hidden" id="totpGroup">
+                            <label for="totpCode" class="text-sm font-medium leading-none">Two-Factor Code</label>
+                            <input type="text" id="totpCode" name="totpCode" autocomplete="one-time-code" placeholder="000000" maxlength="8" inputmode="numeric"
+                                   class="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-1 text-center text-lg font-mono tracking-[0.5em] shadow-sm transition-colors placeholder:text-muted-foreground/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                        </div>
+
+                        <!-- Error alert -->
+                        <div id="errorAlert" class="hidden rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            <div class="flex items-start gap-2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                <span id="errorMsg">Error</span>
+                            </div>
+                        </div>
+
+                        <!-- Submit -->
+                        <button type="submit" id="submitBtn"
+                                class="inline-flex items-center justify-center w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium shadow transition-colors hover:bg-primary/90 disabled:opacity-60 disabled:pointer-events-none gap-2">
+                            <svg id="submitSpinner" class="hidden animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10" opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                            <span id="submitText">Sign In</span>
+                        </button>
+                    </form>
+
+                    <!-- Setup note / Help -->
+                    <div class="mt-6 text-center text-xs text-muted-foreground">
+                        <span id="setupNote" class="hidden">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline align-[-1px] mr-1"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                            First-time setup — this will create your admin account
+                        </span>
+                        <span id="helpNote">
+                            Need help? Check the
+                            <a href="https://github.com/fortunas/FortunaPanel" target="_blank" rel="noopener" class="underline underline-offset-4 hover:text-foreground">documentation</a>.
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: hero panel (hidden on mobile) -->
+        <div class="relative hidden overflow-hidden bg-muted lg:block">
+            <div class="absolute inset-0 bg-gradient-to-br from-violet-500/10 via-sidebar-primary/5 to-transparent"></div>
+            <div class="absolute inset-0" style="background-image: radial-gradient(circle at 25% 30%, hsla(var(--sidebar-primary), 0.12), transparent 40%), radial-gradient(circle at 75% 70%, hsla(var(--sidebar-primary), 0.08), transparent 50%);"></div>
+
+            <!-- Grid overlay -->
+            <div class="absolute inset-0 opacity-[0.03]" style="background-image: linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(to right, hsl(var(--foreground)) 1px, transparent 1px); background-size: 32px 32px;"></div>
+
+            <div class="relative flex h-full flex-col justify-between p-10">
+                <!-- Top: badge -->
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center rounded-full border border-border bg-card/70 backdrop-blur px-3 py-1 text-xs font-medium text-foreground shadow-sm">
+                        <span class="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Panel Online
+                    </span>
+                </div>
+
+                <!-- Center: feature callouts -->
+                <div class="space-y-8">
+                    <blockquote class="space-y-2">
+                        <p class="text-2xl font-semibold leading-snug tracking-tight text-foreground">
+                            "Minecraft server management, simplified."
+                        </p>
+                        <footer class="text-sm text-muted-foreground">
+                            — FortunaPanel
+                        </footer>
+                    </blockquote>
+
+                    <div class="grid gap-3">
+                        <div class="flex items-start gap-3 rounded-xl border border-border/60 bg-card/50 backdrop-blur p-3">
+                            <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-sm font-medium">Multiple Servers</div>
+                                <div class="text-xs text-muted-foreground">Vanilla, Paper, Forge, Fabric, Velocity &amp; more.</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 rounded-xl border border-border/60 bg-card/50 backdrop-blur p-3">
+                            <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-sm font-medium">Proxy Networks</div>
+                                <div class="text-xs text-muted-foreground">Link backends behind Velocity or BungeeCord.</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 rounded-xl border border-border/60 bg-card/50 backdrop-blur p-3">
+                            <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-sm font-medium">Live Monitoring</div>
+                                <div class="text-xs text-muted-foreground">Real-time CPU, memory &amp; player stats.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom: footer -->
+                <div class="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>&copy; <span id="year"></span> FortunaPanel</span>
+                    <div class="flex items-center gap-4">
+                        <a href="https://github.com/fortunas/FortunaPanel" target="_blank" rel="noopener" class="transition-colors hover:text-foreground">GitHub</a>
+                        <a href="#" class="transition-colors hover:text-foreground">Docs</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorMsg = document.getElementById('errorMsg');
+        const errorAlert = document.getElementById('errorAlert');
+        const submitBtn = document.getElementById('submitBtn');
+        const submitText = document.getElementById('submitText');
+        const submitSpinner = document.getElementById('submitSpinner');
+        const heading = document.getElementById('heading');
+        const subtitle = document.getElementById('subtitle');
+        const setupNote = document.getElementById('setupNote');
+        const helpNote = document.getElementById('helpNote');
+        const passwordHint = document.getElementById('passwordHint');
+        const pwInput = document.getElementById('password');
+        const togglePw = document.getElementById('togglePw');
+        const eyeIcon = document.getElementById('eyeIcon');
+        document.getElementById('year').textContent = new Date().getFullYear();
+
+        let isSetupMode = false;
+        let needs2FA = false;
+
+        const EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+        const EYE_OFF = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+
+        togglePw.addEventListener('click', () => {
+            const showing = pwInput.type === 'text';
+            pwInput.type = showing ? 'password' : 'text';
+            eyeIcon.innerHTML = showing ? EYE_OPEN : EYE_OFF;
+            togglePw.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+        });
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorAlert.classList.remove('hidden');
+        }
+        function clearError() {
+            errorAlert.classList.add('hidden');
+        }
+
+        function setSubmitting(on) {
+            submitBtn.disabled = on;
+            submitSpinner.classList.toggle('hidden', !on);
+        }
+
+        async function checkSetup() {
+            try {
+                const res = await fetch('/api/auth/verify');
+                if (res.status === 503) {
+                    isSetupMode = true;
+                    heading.textContent = 'Set up your panel';
+                    subtitle.textContent = 'Create your admin account to get started.';
+                    submitText.textContent = 'Create Account';
+                    setupNote.classList.remove('hidden');
+                    helpNote.classList.add('hidden');
+                    passwordHint.classList.remove('hidden');
+                    pwInput.placeholder = 'Choose a strong password';
+                    pwInput.setAttribute('autocomplete', 'new-password');
+                }
+            } catch (e) {
+                showError('Cannot reach server — check your connection and try again.');
+            }
+        }
+
+        async function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (token) {
+                let reachable = true;
+                try {
+                    const res = await fetch('/api/auth/verify', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        window.location.href = '/';
+                        return;
+                    }
+                } catch (e) {
+                    reachable = false;
+                }
+                if (reachable) localStorage.removeItem('token');
+            }
+            checkSetup();
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+            setSubmitting(true);
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const totpCode = document.getElementById('totpCode').value;
+
+            try {
+                const endpoint = isSetupMode ? '/api/auth/setup' : '/api/auth/login';
+                const body = { username, password };
+                if (needs2FA && totpCode) body.totpCode = totpCode;
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.requires2FA) {
+                    needs2FA = true;
+                    document.getElementById('totpGroup').classList.remove('hidden');
+                    document.getElementById('totpCode').focus();
+                    heading.textContent = 'Two-factor authentication';
+                    subtitle.textContent = 'Enter the 6-digit code from your authenticator app.';
+                    submitText.textContent = 'Verify';
+                    setSubmitting(false);
+                } else if (res.ok && data.token) {
+                    localStorage.setItem('token', data.token);
+                    if (data.username) localStorage.setItem('fortuna-username', data.username);
+                    window.location.href = '/';
+                } else {
+                    showError(data.error || 'Login failed');
+                    setSubmitting(false);
+                }
+            } catch (err) {
+                showError('Connection failed — is the panel running?');
+                setSubmitting(false);
+            }
+        });
+
+        checkAuth();
+    </script>
+</body>
+</html>

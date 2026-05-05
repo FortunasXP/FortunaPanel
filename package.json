@@ -1,0 +1,90 @@
+{
+  "name": "fortunapanel",
+  "version": "1.0.0",
+  "description": "Web-based Minecraft server management panel",
+  "author": "Fortuna",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "css:build": "npx tailwindcss -i ./src/css/globals.css -o ./public/css/tailwind.css --minify && npx tailwindcss -i ./src/css/components.css -o ./public/css/components.css --minify",
+    "css:watch": "npx tailwindcss -i ./src/css/globals.css -o ./public/css/tailwind.css --watch",
+    "css:dev": "npx tailwindcss -i ./src/css/globals.css -o ./public/css/tailwind.css --watch & nodemon src/index.js",
+    "test:security": "node scripts/security-smoke.mjs",
+    "electron": "electron .",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "build": "npm run css:build && electron-builder --win",
+    "generate-icon": "node scripts/generate-icon.js",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "otpauth": "^9.5.0",
+    "qrcode": "^1.5.4",
+    "ssh2": "^1.17.0",
+    "uuid": "^10.0.0",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0",
+    "yauzl": "^3.3.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.27",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "nodemon": "^3.1.9",
+    "postcss": "^8.5.9",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "tailwindcss-motion": "^1.1.1"
+  },
+  "build": {
+    "appId": "com.fortuna.panel",
+    "productName": "FortunaPanel",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "package.json",
+      ".env.example"
+    ],
+    "extraResources": [
+      {
+        "from": "data",
+        "to": "data",
+        "filter": [
+          "*.json",
+          "!stats/**",
+          "!console-logs/**",
+          "!jars/**"
+        ]
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/bcrypt/**",
+      "node_modules/ssh2/**",
+      "node_modules/cpu-features/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "forceCodeSigning": false,
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,890 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== shadcn/ui design tokens (dark-only, single theme) ===== */
+
+@layer base {
+  :root {
+    --radius: 0.625rem;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    color-scheme: dark;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground flex min-h-screen;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* ===== FortunaPanel layout tokens ===== */
+
+:root {
+  --sidebar-width-collapsed: 56px;
+  --sidebar-width-expanded: 240px;
+  --topbar-height: 52px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Legacy variable aliases (mapped to shadcn tokens for inline style() compatibility) */
+  --text-primary: hsl(var(--foreground));
+  --text-secondary: hsl(var(--muted-foreground));
+  --text-muted: hsl(var(--muted-foreground));
+  --text-tertiary: hsl(var(--muted-foreground));
+  --bg-card: hsl(var(--card));
+  --bg-elevated: hsl(var(--muted));
+  --bg-hover: hsl(var(--accent));
+  --border-light: hsl(var(--border));
+  --border-subtle: hsl(var(--border) / 0.5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --accent-blue: #3b82f6;
+  --accent-green: #22c55e;
+  --accent-red: hsl(var(--destructive));
+  --accent-yellow: #eab308;
+  --accent-purple: #a855f7;
+}
+
+/* ===== Scrollbar ===== */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/30; }
+
+/* ===== Layout: sidebar-08 inset variant ===== */
+
+.sidebar-shell {
+  @apply flex min-h-screen w-full bg-background p-2 gap-2;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width-expanded);
+  @apply flex flex-col shrink-0 rounded-xl bg-sidebar text-sidebar-foreground border border-sidebar-border shadow-sm overflow-hidden h-[calc(100vh-1rem)] sticky top-2 z-30 transition-[width,transform] duration-200 ease-out;
+}
+
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar {
+  width: var(--sidebar-width-collapsed);
+}
+
+/* ===== Collapsed (icon-only) state ===== */
+/* Hide all text/chevrons, center icons, close submenus */
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-brand-text,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-group-label,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button > span,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button .sidebar-chevron,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-sub,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-user-info,
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-user-chevron {
+  display: none !important;
+}
+
+/* Hide the Recent Servers group entirely when collapsed */
+.sidebar-shell[data-sidebar-state="collapsed"] #sidebarRecentGroup {
+  display: none !important;
+}
+
+/* Center icons in collapsed buttons */
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button {
+  @apply justify-center px-0 size-8 mx-auto;
+}
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-brand {
+  @apply justify-center p-1;
+}
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-user {
+  @apply justify-center p-1;
+}
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-content {
+  @apply px-1;
+}
+/* Active chip in collapsed state — squared icon tile */
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button.active {
+  @apply rounded-md;
+}
+
+/* Tooltip on hover for collapsed items (shows the label) */
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-item {
+  @apply relative;
+}
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button[data-page]::after {
+  content: attr(data-tooltip);
+  @apply absolute left-full ml-2 top-1/2 -translate-y-1/2 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md pointer-events-none opacity-0 whitespace-nowrap z-50 transition-opacity duration-150;
+}
+.sidebar-shell[data-sidebar-state="collapsed"] .sidebar-menu-button[data-page]:hover::after {
+  @apply opacity-100;
+}
+
+/* Header with brand */
+.sidebar-header {
+  @apply p-2 border-b border-sidebar-border/60 shrink-0;
+}
+.sidebar-brand {
+  @apply flex items-center gap-2 rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring;
+}
+.sidebar-brand-icon {
+  @apply flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground;
+}
+.sidebar-brand-text {
+  @apply grid min-w-0 flex-1 text-left text-sm leading-tight overflow-hidden;
+}
+.sidebar-brand-title {
+  @apply truncate font-semibold;
+}
+.sidebar-brand-subtitle {
+  @apply truncate text-xs text-sidebar-foreground/60;
+}
+
+/* Scrollable content */
+.sidebar-content {
+  @apply flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden p-2;
+}
+
+.sidebar-group {
+  @apply relative flex w-full min-w-0 flex-col gap-0.5 py-1;
+}
+.sidebar-group-bottom {
+  @apply mt-auto;
+}
+.sidebar-group-label {
+  @apply flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/60 mb-0.5;
+}
+
+.sidebar-menu {
+  @apply flex w-full min-w-0 flex-col gap-0.5 list-none p-0 m-0;
+}
+.sidebar-menu-item {
+  @apply relative list-none;
+}
+
+/* Top-level menu button */
+.sidebar-menu-button {
+  @apply flex w-full items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-left text-sm outline-none ring-sidebar-ring transition-colors cursor-pointer bg-transparent border-0 text-sidebar-foreground/80;
+}
+.sidebar-menu-button:hover {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground;
+}
+.sidebar-menu-button:focus-visible {
+  @apply ring-2;
+}
+.sidebar-menu-button.active {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground font-medium;
+}
+.sidebar-menu-button > span {
+  @apply truncate flex-1;
+}
+.sidebar-menu-button-sm {
+  @apply text-[13px] py-1;
+}
+
+.sidebar-icon {
+  @apply size-4 shrink-0;
+}
+.sidebar-chevron {
+  @apply ml-auto size-4 shrink-0 text-sidebar-foreground/50 transition-transform duration-200;
+}
+.sidebar-menu-item[data-open="true"] > .sidebar-menu-button .sidebar-chevron {
+  transform: rotate(90deg);
+}
+
+/* Sub-menu (indented submenu) */
+.sidebar-menu-sub {
+  @apply mx-3.5 flex min-w-0 translate-x-px flex-col gap-0.5 border-l border-sidebar-border/60 px-2.5 py-0.5 list-none m-0 overflow-hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.2s ease-out, opacity 0.15s ease-out, padding 0.2s ease-out;
+}
+.sidebar-menu-item[data-open="true"] > .sidebar-menu-sub {
+  max-height: 500px;
+  opacity: 1;
+  @apply py-1;
+}
+
+.sidebar-menu-sub-button {
+  @apply flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-[13px] text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-colors no-underline;
+}
+.sidebar-menu-sub-button:hover {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground;
+}
+.sidebar-menu-sub-button.active {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground font-medium;
+}
+.sidebar-menu-sub-button > span {
+  @apply truncate;
+}
+
+/* Recent servers mini-item */
+.sidebar-recent-item {
+  @apply flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground cursor-pointer no-underline;
+}
+.sidebar-recent-item .status-dot {
+  @apply size-1.5;
+}
+.sidebar-recent-item > span {
+  @apply truncate flex-1 text-[13px];
+}
+
+/* Footer / User block */
+.sidebar-footer {
+  @apply relative p-2 border-t border-sidebar-border/60 shrink-0;
+}
+.sidebar-user {
+  @apply flex w-full items-center gap-2 rounded-md p-2 text-left bg-transparent border-0 text-sidebar-foreground transition-colors cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring;
+}
+.sidebar-user[aria-expanded="true"] {
+  @apply bg-sidebar-accent text-sidebar-accent-foreground;
+}
+.sidebar-user-avatar {
+  @apply flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary/10 text-sidebar-primary-foreground text-sm font-semibold uppercase;
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-accent-foreground));
+}
+.sidebar-user-info {
+  @apply grid min-w-0 flex-1 text-left text-sm leading-tight overflow-hidden;
+}
+.sidebar-user-name {
+  @apply truncate font-medium;
+}
+.sidebar-user-email {
+  @apply truncate text-xs text-sidebar-foreground/60;
+}
+.sidebar-user-chevron {
+  @apply ml-auto size-4 shrink-0 text-sidebar-foreground/50;
+}
+
+/* User dropdown menu */
+.sidebar-user-menu {
+  @apply absolute bottom-full left-2 right-2 mb-2 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-1 z-50 motion-safe:motion-opacity-in-0 motion-safe:motion-translate-y-in-25 motion-safe:motion-duration-200;
+}
+.sidebar-user-menu[hidden] { display: none; }
+.sidebar-user-menu-header {
+  @apply flex items-center gap-2 px-2 py-2;
+}
+.sidebar-user-menu-header .sidebar-user-avatar {
+  @apply size-8;
+}
+.sidebar-user-menu-separator {
+  @apply my-1 h-px bg-border;
+}
+.sidebar-user-menu-item {
+  @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-popover-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer bg-transparent border-0 text-left no-underline;
+}
+.sidebar-user-menu-item svg {
+  @apply size-4 shrink-0 text-muted-foreground;
+}
+.sidebar-user-menu-item:hover svg {
+  @apply text-foreground;
+}
+.sidebar-user-menu-item-danger {
+  @apply text-destructive hover:bg-destructive/10 hover:text-destructive;
+}
+.sidebar-user-menu-item-danger:hover svg,
+.sidebar-user-menu-item-danger svg {
+  @apply text-destructive;
+}
+
+/* Legacy compat: map old .nav-item selectors to new button for any old code */
+.nav-item { @apply sidebar-menu-button w-full; }
+.nav-item.active { @apply bg-sidebar-accent text-sidebar-accent-foreground font-medium; }
+.nav-icon { @apply size-4 shrink-0; }
+.nav-label { @apply truncate flex-1; }
+
+/* Sidebar trigger button (in topbar) */
+.sidebar-trigger {
+  @apply inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer bg-transparent border-0 shrink-0;
+}
+
+.topbar-separator {
+  @apply mx-2 h-4 w-px bg-border shrink-0;
+}
+
+/* Mobile: sidebar becomes a drawer */
+.sidebar-backdrop {
+  @apply fixed inset-0 z-20 bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-200;
+}
+.sidebar-shell.sidebar-open .sidebar-backdrop {
+  @apply opacity-100 pointer-events-auto;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    @apply fixed left-2 top-2 bottom-2 z-40;
+    transform: translateX(calc(-100% - 1rem));
+  }
+  .sidebar-shell.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+}
+
+/* Main area (inset variant — looks like a card floating next to sidebar) */
+.main {
+  @apply flex flex-1 min-w-0 flex-col rounded-xl bg-background overflow-hidden border border-border/40;
+  min-height: calc(100vh - 1rem);
+}
+
+/* Top bar */
+.topbar {
+  height: var(--topbar-height);
+  @apply flex items-center gap-2 px-4 border-b border-border shrink-0 bg-card;
+}
+
+.breadcrumbs {
+  @apply flex items-center gap-2 text-sm text-muted-foreground min-w-0;
+}
+.breadcrumbs a { @apply text-muted-foreground transition-colors hover:text-foreground; }
+.breadcrumbs span:last-child { @apply text-foreground font-medium truncate; }
+.breadcrumbs .separator { @apply text-muted-foreground text-xs shrink-0; }
+
+.topbar-actions { @apply ml-auto flex items-center gap-4 relative; }
+.topbar-user {
+  @apply text-xs text-muted-foreground py-1.5 px-3 bg-muted border border-border rounded-md;
+}
+
+/* Notification Center */
+.notif-bell {
+  @apply relative flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground
+         hover:text-foreground hover:bg-muted transition-colors cursor-pointer bg-transparent border-0;
+}
+.notif-badge {
+  @apply absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full
+         bg-destructive text-destructive-foreground text-[10px] font-medium
+         flex items-center justify-center leading-none;
+}
+.notif-panel {
+  @apply absolute top-full right-0 mt-2 w-80 rounded-lg border border-border
+         bg-card shadow-xl overflow-hidden;
+  z-index: 200;
+  display: none;
+}
+.notif-panel.open { display: block; }
+.notif-panel-header {
+  @apply flex items-center justify-between px-3 py-2 border-b border-border;
+}
+.notif-panel-title { @apply text-xs font-semibold text-foreground; }
+.notif-clear-btn {
+  @apply text-[10px] text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-0;
+}
+.notif-panel-body {
+  @apply overflow-y-auto;
+  max-height: 320px;
+}
+.notif-empty {
+  @apply py-8 text-center text-xs text-muted-foreground;
+}
+.notif-item {
+  @apply flex items-start gap-2 px-3 py-2.5 border-b border-border/50 transition-colors;
+}
+.notif-item:last-child { @apply border-b-0; }
+.notif-icon { @apply mt-0.5 flex-shrink-0; }
+.notif-content { @apply flex-1 min-w-0; }
+.notif-title { @apply text-xs font-medium text-foreground; }
+.notif-message { @apply text-[11px] text-muted-foreground truncate; }
+.notif-time { @apply text-[10px] text-muted-foreground flex-shrink-0 mt-0.5; }
+
+.content {
+  @apply flex-1 overflow-y-auto p-6;
+}
+
+/* ===== Page transitions (tailwindcss-motion enhanced) ===== */
+
+.page-enter {
+  @apply opacity-0 translate-y-1;
+}
+.page-enter-active {
+  @apply opacity-100 translate-y-0 transition-all duration-200 ease-out;
+}
+
+/* ===== Loading ===== */
+
+.page-loading { @apply flex items-center justify-center h-48; }
+
+.spinner {
+  @apply w-5 h-5 border-2 border-border rounded-full animate-spin;
+  border-top-color: hsl(var(--primary));
+}
+
+/* ===== Buttons (shadcn style) ===== */
+
+.btn {
+  @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors
+         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+         disabled:pointer-events-none disabled:opacity-50;
+  padding: 8px 16px;
+}
+.btn:active:not(:disabled) { @apply scale-[0.98]; }
+
+.btn-primary {
+  @apply bg-primary text-primary-foreground shadow hover:bg-primary/90;
+}
+.btn-secondary {
+  @apply bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 border border-border;
+}
+.btn-destructive, .btn-danger {
+  @apply bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90;
+}
+.btn-success {
+  @apply bg-emerald-600 text-white shadow-sm hover:bg-emerald-700;
+}
+.btn-ghost {
+  @apply hover:bg-accent hover:text-accent-foreground;
+}
+.btn-outline {
+  @apply border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground;
+}
+.btn-accent {
+  @apply bg-primary text-primary-foreground shadow hover:bg-primary/90;
+}
+
+.btn-sm { @apply h-8 rounded-md px-3 text-xs; }
+.btn-lg { @apply h-10 rounded-md px-8; }
+.btn-icon { @apply h-9 w-9 p-0; }
+
+/* ===== Cards (shadcn) ===== */
+
+.card {
+  @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+}
+.card-header { @apply flex flex-col space-y-1.5 p-6; }
+.card-title { @apply font-semibold leading-none tracking-tight; }
+.card-description { @apply text-sm text-muted-foreground; }
+.card-content { @apply p-6 pt-0; }
+.card-footer { @apply flex items-center p-6 pt-0; }
+
+/* ===== Forms (shadcn) ===== */
+
+.form-group { @apply mb-4; }
+.form-label { @apply text-sm font-medium leading-none mb-2 block; }
+
+/* ===== Custom Select (dark dropdown replacement) ===== */
+
+.custom-select-wrapper {
+  @apply relative inline-flex w-full;
+}
+
+.custom-select-trigger {
+  @apply flex h-9 w-full items-center justify-between rounded-md border border-border
+         bg-card px-3 py-1 text-sm text-foreground shadow-sm
+         transition-colors cursor-pointer
+         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+         disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.custom-select-trigger-text {
+  @apply truncate;
+}
+
+.custom-select-chevron {
+  @apply ml-2 flex-shrink-0 text-muted-foreground;
+}
+
+.custom-select-options {
+  @apply absolute top-full left-0 mt-1 w-full rounded-md border border-border
+         bg-card text-foreground shadow-lg overflow-auto;
+  max-height: 200px;
+  z-index: 100;
+  display: none;
+}
+
+.custom-select-wrapper.open .custom-select-options {
+  display: block;
+}
+
+.custom-select-option {
+  @apply px-3 py-1.5 text-sm cursor-pointer transition-colors;
+}
+
+.custom-select-option:hover {
+  @apply bg-accent text-accent-foreground;
+}
+
+.custom-select-option.selected {
+  @apply bg-accent/60 text-accent-foreground font-medium;
+}
+
+.form-input {
+  @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm
+         transition-colors placeholder:text-muted-foreground
+         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+         disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.form-select {
+  @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm
+         transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+         disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer appearance-none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.form-textarea {
+  @apply flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm
+         placeholder:text-muted-foreground
+         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+         disabled:cursor-not-allowed disabled:opacity-50;
+  font-family: var(--font-mono);
+}
+
+.form-hint { @apply text-xs text-muted-foreground mt-1.5; }
+
+/* ===== Tabs (shadcn) ===== */
+
+.tabs {
+  @apply inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground mb-6;
+}
+.tab {
+  @apply inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium
+         ring-offset-background transition-all
+         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+         disabled:pointer-events-none disabled:opacity-50 cursor-pointer;
+}
+.tab:hover { @apply text-foreground; }
+.tab.active {
+  @apply bg-background text-foreground shadow;
+}
+
+/* ===== Tables (shadcn) ===== */
+
+.table { @apply w-full caption-bottom text-sm; }
+.table th {
+  @apply h-10 px-4 text-left align-middle font-medium text-muted-foreground;
+}
+.table td { @apply p-4 align-middle; }
+.table tr { @apply border-b border-border transition-colors; }
+.table tbody tr:hover { @apply bg-muted/50; }
+
+/* ===== Badge (shadcn) ===== */
+
+.badge {
+  @apply inline-flex items-center rounded-md border border-border px-2.5 py-0.5 text-xs font-semibold
+         transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+}
+.badge-success { @apply border-transparent bg-emerald-500/10 text-emerald-500; }
+.badge-danger { @apply border-transparent bg-destructive/10 text-destructive; }
+.badge-secondary { @apply border-transparent bg-secondary text-secondary-foreground; }
+.badge-outline { @apply text-foreground; }
+
+/* ===== Status dots ===== */
+
+.status-dot { @apply w-2 h-2 rounded-full shrink-0 transition-colors duration-300; }
+.status-dot.online { @apply bg-emerald-500; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6); }
+.status-dot.offline { @apply bg-muted-foreground/30; }
+.status-dot.starting { @apply bg-amber-400 animate-pulse; }
+.status-dot.stopping { @apply bg-amber-400 animate-pulse; }
+.status-dot.status-running { @apply bg-emerald-500; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6); }
+.status-dot.status-stopped { @apply bg-muted-foreground/30; }
+.status-dot.status-starting { @apply bg-amber-400 animate-pulse; }
+.status-dot.status-stopping { @apply bg-amber-400 animate-pulse; }
+.status-dot.status-unknown { @apply bg-muted-foreground; }
+
+/* ===== Stat cards ===== */
+
+.stats-row { @apply grid grid-cols-4 gap-4 mb-8; }
+
+.stat-card {
+  @apply rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/50;
+}
+.stat-label { @apply text-xs font-medium text-muted-foreground uppercase tracking-wider; }
+.stat-value { @apply text-3xl font-bold tracking-tight mt-2; }
+.stat-sub { @apply text-xs text-muted-foreground mt-1; }
+
+/* ===== Server cards ===== */
+
+.server-grid {
+  @apply grid gap-4;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+
+.server-card {
+  @apply relative overflow-hidden rounded-xl border border-border bg-card cursor-pointer transition-all duration-300 ease-out;
+}
+.server-card:hover {
+  @apply border-foreground/20 -translate-y-0.5 shadow-lg shadow-black/20;
+}
+.server-card::before {
+  content: '';
+  @apply absolute inset-y-0 left-0 w-[3px] transition-all duration-300;
+  background: hsl(var(--border));
+}
+.server-card[data-status="running"]::before {
+  background: linear-gradient(180deg, hsl(142 72% 45%), hsl(160 64% 40%));
+  box-shadow: 0 0 12px hsl(142 72% 45% / 0.4);
+}
+.server-card[data-status="starting"]::before,
+.server-card[data-status="stopping"]::before {
+  background: linear-gradient(180deg, hsl(38 92% 55%), hsl(25 90% 55%));
+}
+.server-card[data-status="stopped"]::before {
+  background: hsl(var(--border));
+}
+.server-card[data-status="running"]:hover::before {
+  box-shadow: 0 0 16px hsl(142 72% 45% / 0.6);
+}
+
+/* Glow overlay for running servers */
+.server-card[data-status="running"]::after {
+  content: '';
+  @apply pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500;
+  background: radial-gradient(circle at top left, hsl(142 72% 45% / 0.06), transparent 60%);
+}
+.server-card[data-status="running"]:hover::after {
+  @apply opacity-100;
+}
+
+/* Server type icon bubble */
+.server-type-icon {
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground transition-colors duration-200;
+}
+.server-card:hover .server-type-icon {
+  @apply bg-accent text-foreground border-foreground/10;
+}
+.server-card[data-type="velocity"] .server-type-icon,
+.server-card[data-type="bungeecord"] .server-type-icon,
+.server-card[data-type="waterfall"] .server-type-icon {
+  @apply bg-violet-500/10 text-violet-400 border-violet-500/20;
+}
+.server-card[data-type="paper"] .server-type-icon,
+.server-card[data-type="purpur"] .server-type-icon,
+.server-card[data-type="spigot"] .server-type-icon {
+  @apply bg-sky-500/10 text-sky-400 border-sky-500/20;
+}
+.server-card[data-type="forge"] .server-type-icon,
+.server-card[data-type="neoforge"] .server-type-icon {
+  @apply bg-orange-500/10 text-orange-400 border-orange-500/20;
+}
+.server-card[data-type="fabric"] .server-type-icon,
+.server-card[data-type="quilt"] .server-type-icon {
+  @apply bg-amber-500/10 text-amber-400 border-amber-500/20;
+}
+
+/* Status chip with pulsing dot for running */
+.status-chip {
+  @apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0;
+}
+.status-chip[data-status="running"] {
+  @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/20;
+}
+.status-chip[data-status="stopped"] {
+  @apply bg-muted text-muted-foreground border border-border;
+}
+.status-chip[data-status="starting"],
+.status-chip[data-status="stopping"] {
+  @apply bg-amber-500/10 text-amber-400 border border-amber-500/20;
+}
+.status-chip .status-ping {
+  @apply relative flex h-1.5 w-1.5 shrink-0;
+}
+.status-chip[data-status="running"] .status-ping::before {
+  content: '';
+  @apply absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75;
+}
+.status-chip .status-ping::after {
+  content: '';
+  @apply absolute inset-0 rounded-full bg-current;
+}
+
+/* Metric strip inside card */
+.server-metric-strip {
+  @apply grid grid-cols-3 border-y border-border/60 bg-muted/20;
+}
+.server-metric {
+  @apply relative flex flex-col items-center justify-center py-3 px-2;
+}
+.server-metric + .server-metric {
+  @apply border-l border-border/60;
+}
+.server-metric-value {
+  @apply text-base font-bold tracking-tight leading-tight;
+}
+.server-metric-label {
+  @apply text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5;
+}
+
+/* Action row */
+.server-card-actions {
+  @apply flex items-center justify-between gap-2 px-4 py-3;
+}
+.server-card-arrow {
+  @apply h-4 w-4 text-muted-foreground transition-all duration-200;
+}
+.server-card:hover .server-card-arrow {
+  @apply text-foreground translate-x-0.5;
+}
+
+/* Network badge */
+.server-network-badge {
+  @apply inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+}
+
+/* ===== Page header ===== */
+
+.page-header { @apply flex items-center justify-between mb-8; }
+.page-title { @apply text-2xl font-bold tracking-tight; }
+.page-subtitle { @apply text-sm text-muted-foreground mt-1; }
+.page-actions { @apply flex gap-2; }
+
+/* ===== Section headers ===== */
+
+.section-header { @apply flex items-center justify-between mb-4; }
+.section-title { @apply text-xs font-semibold text-muted-foreground uppercase tracking-wider; }
+
+/* ===== Settings card ===== */
+
+.settings-card { @apply rounded-lg border border-border bg-card overflow-hidden; }
+.settings-card-header { @apply p-5 border-b border-border; }
+.settings-card-header-row { @apply flex items-center justify-between; }
+.settings-card-title { @apply text-sm font-semibold; }
+.settings-card-desc { @apply text-xs text-muted-foreground mt-0.5; }
+.settings-card-body { @apply p-5; }
+.settings-card-footer { @apply p-4 border-t border-border flex justify-end; }
+.settings-card-footer-split { @apply justify-between; }
+
+/* ===== Empty state ===== */
+
+.empty-state { @apply text-center py-12 px-5; }
+.empty-state h3 { @apply text-base font-semibold mb-2; }
+.empty-state p { @apply text-muted-foreground text-sm mb-6; }
+
+.empty-state-icon {
+  @apply w-12 h-12 bg-muted border border-border rounded-lg inline-flex items-center justify-center mb-4 text-muted-foreground;
+}
+
+.empty-state-dashed {
+  @apply text-center py-12 px-5 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground;
+}
+
+/* ===== Info bar ===== */
+
+.info-bar {
+  @apply mt-8 p-5 bg-card border border-border rounded-lg flex gap-8 flex-wrap;
+}
+.info-bar-item { @apply text-xs text-muted-foreground; }
+.info-bar-label { @apply text-foreground; }
+
+/* ===== Grid helpers ===== */
+
+.grid-2 { @apply grid grid-cols-2 gap-4; }
+.grid-3 { @apply grid grid-cols-3 gap-4; }
+
+/* ===== Mini stat ===== */
+
+.mini-stat { @apply rounded-lg border border-border bg-card p-4; }
+.mini-stat-label { @apply text-xs text-muted-foreground; }
+.mini-stat-value { @apply text-2xl font-semibold mt-1; }
+
+/* ===== Danger zone ===== */
+
+.danger-zone { @apply mt-12 pt-6 border-t border-destructive/30; }
+.danger-zone-title { @apply text-base font-medium mb-2 text-destructive; }
+.danger-zone-desc { @apply text-sm text-muted-foreground mb-3; }
+
+/* ===== Icon box ===== */
+
+.icon-box {
+  @apply flex items-center justify-center shrink-0 bg-muted border border-border rounded-md;
+}
+.icon-box-md { @apply w-9 h-9; }
+.icon-box-lg { @apply w-11 h-11 rounded-lg; }
+
+/* ===== Proxy badge ===== */
+
+.proxy-type-badge {
+  @apply inline-flex items-center px-2.5 py-0.5 text-[11px] font-semibold tracking-wide
+         text-muted-foreground bg-muted border border-border rounded-full uppercase;
+}
+
+/* ===== Network badge ===== */
+
+.network-badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium
+         text-muted-foreground bg-muted border border-border rounded-full
+         no-underline transition-colors cursor-pointer;
+}
+.network-badge:hover { @apply border-ring/30 text-foreground; }
+
+/* ===== Skeleton ===== */
+
+.skeleton {
+  @apply animate-pulse rounded-md bg-muted;
+}
+
+/* ===== Properties ===== */
+
+.properties-group { @apply mb-6; }
+.properties-group-title {
+  @apply text-xs text-muted-foreground uppercase tracking-wider mb-3 pb-2 border-b border-border font-medium;
+}
+.property-row { @apply flex items-center gap-3 py-2; }
+.property-label { @apply w-48 text-sm shrink-0 text-muted-foreground; }
+.property-input { @apply flex-1; }
+.property-desc { @apply text-xs text-muted-foreground w-48 shrink-0; }
+
+/* ===== Keyboard shortcut keys ===== */
+
+.kbd-shortcut {
+  @apply inline-flex items-center gap-1;
+}
+.kbd-key {
+  @apply inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5
+         text-[11px] font-mono font-medium rounded border
+         border-border bg-muted text-muted-foreground;
+}
+
+/* ===== Bulk action bar ===== */
+
+.bulk-actions-bar {
+  @apply flex items-center gap-2 flex-wrap;
+}
+.bulk-actions-bar .btn {
+  @apply text-[11px] px-2.5 py-1;
+}
+
+/* ===== Responsive ===== */
+
+@media (max-width: 1200px) {
+  .stats-row { @apply grid-cols-2; }
+}
+@media (max-width: 768px) {
+  /* Sidebar becomes drawer on mobile — width handled in sidebar section above */
+  .content { @apply p-4; }
+  .server-grid { @apply grid-cols-1; }
+  .stats-row { @apply grid-cols-2; }
+}
