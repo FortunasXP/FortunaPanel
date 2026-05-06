@@ -796,20 +796,23 @@ async function renderStatsTab(content, params) {
         }
 
         // Extract chart data based on range
-        let playerData, tpsData, uptimeData;
+        let playerData, tpsData, uptimeData, memoryData;
 
         if (range === '24h') {
             playerData = data.map(d => d.players || 0);
             tpsData = data.map(d => d.tps !== null ? d.tps : 0);
             uptimeData = data.map(d => d.online ? 1 : 0);
+            memoryData = data.map(d => d.memoryMB || 0);
         } else if (range === '7d') {
             playerData = data.map(d => d.avgPlayers || 0);
             tpsData = data.map(d => d.avgTps !== null ? d.avgTps : 0);
             uptimeData = data.map(d => d.uptime ? 1 : 0);
+            memoryData = data.map(d => d.avgMemoryMB || 0);
         } else {
             playerData = data.map(d => d.avgPlayers || 0);
             tpsData = data.map(d => d.avgTps !== null ? d.avgTps : 0);
             uptimeData = data.map(d => d.totalUptime ? 1 : 0);
+            memoryData = data.map(d => d.avgMemoryMB || 0);
         }
 
         // Calculate summaries
@@ -823,6 +826,9 @@ async function renderStatsTab(content, params) {
             ? data.filter(d => d.online).length
             : data.filter(d => range === '7d' ? d.uptime > 0 : d.totalUptime > 0).length;
         const uptimePercent = data.length ? Math.round((onlineCount / data.length) * 100) : 0;
+        const peakMemory = Math.max(0, ...memoryData);
+        const avgMemory = memoryData.length ? Math.round(memoryData.reduce((a, b) => a + b, 0) / memoryData.length) : 0;
+        const memoryLabel = peakMemory >= 1024 ? (peakMemory / 1024).toFixed(1) + ' GB' : peakMemory + ' MB';
 
         // Time label
         const rangeLabels = { '24h': 'Last 24 Hours', '7d': 'Last 7 Days', '30d': 'Last 30 Days' };
@@ -851,14 +857,14 @@ async function renderStatsTab(content, params) {
                     <div class="stat-sub">${avgTps !== '—' && avgTps >= 19 ? 'Healthy' : avgTps !== '—' ? 'Degraded' : 'No data'}</div>
                 </div>
                 <div class="stat-card">
+                    <div class="stat-label">Memory</div>
+                    <div class="stat-value">${memoryLabel}</div>
+                    <div class="stat-sub">avg ${avgMemory >= 1024 ? (avgMemory / 1024).toFixed(1) + ' GB' : avgMemory + ' MB'}</div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-label">Uptime</div>
                     <div class="stat-value">${uptimePercent}%</div>
                     <div class="stat-sub">${onlineCount} / ${data.length} intervals</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Data Points</div>
-                    <div class="stat-value">${data.length}</div>
-                    <div class="stat-sub">${range === '24h' ? '5-min intervals' : range === '7d' ? 'hourly averages' : 'daily averages'}</div>
                 </div>
             </div>
 
@@ -882,29 +888,28 @@ async function renderStatsTab(content, params) {
             <div class="grid-2">
                 <div class="chart-container">
                     <div class="chart-header">
+                        <span class="chart-title">Memory Usage</span>
+                        <span class="chart-value">${memoryLabel}</span>
+                    </div>
+                    <canvas id="statsMemoryChart" class="chart-canvas"></canvas>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-header">
                         <span class="chart-title">Server Uptime</span>
                         <span class="chart-value">${uptimePercent}%</span>
                     </div>
                     <canvas id="statsUptimeChart" class="chart-canvas"></canvas>
-                </div>
-                <div class="chart-container">
-                    <div class="chart-header">
-                        <span class="chart-title">Timeline</span>
-                        <span class="chart-value text-xs font-normal text-muted-foreground">${data.length > 0 ? formatStatsTime(data[0].ts) + ' — ' + formatStatsTime(data[data.length - 1].ts) : ''}</span>
-                    </div>
-                    <canvas id="statsTimelineChart" class="chart-canvas"></canvas>
                 </div>
             </div>
         `;
 
         // Draw charts
         const maxPlayers = Math.max(1, peakPlayers);
+        const maxMem = Math.max(1, peakMemory);
         drawChart('statsPlayersChart', playerData, '#d4d4d8', { maxValue: maxPlayers, showDot: true, fillAlpha: 0.12 });
         drawChart('statsTpsChart', tpsData, '#a1a1aa', { maxValue: 20, showDot: true, fillAlpha: 0.09 });
-        drawChart('statsUptimeChart', uptimeData, '#71717a', { maxValue: 1, showDot: false, fillAlpha: 0.19 });
-
-        // Timeline: use player data again with a different color for visual variety
-        drawChart('statsTimelineChart', playerData, '#52525b', { maxValue: maxPlayers, showDot: false, fillAlpha: 0.08 });
+        drawChart('statsMemoryChart', memoryData, '#71717a', { maxValue: maxMem, showDot: true, fillAlpha: 0.14 });
+        drawChart('statsUptimeChart', uptimeData, '#52525b', { maxValue: 1, showDot: false, fillAlpha: 0.19 });
 
         // Wire range buttons
         content.querySelectorAll('[data-range]').forEach(btn => {

@@ -69,10 +69,15 @@ class StatsCollector extends EventEmitter {
             const stats = this._loadStats(server.id);
             const isOnline = server.status === 'running';
 
+            // Get real memory from SystemMonitor cache
+            const serverStats = this.systemMonitor?.getServerStats(server.id);
+            const memoryMB = serverStats?.currentMemoryMB || 0;
+
             stats.raw.push({
                 ts: now,
                 players: isOnline ? server.players.size : 0,
                 tps: isOnline ? (server.lastTps || null) : null,
+                memoryMB: isOnline ? memoryMB : 0,
                 online: isOnline
             });
 
@@ -123,12 +128,15 @@ class StatsCollector extends EventEmitter {
             const onlinePoints = hourRaw.filter(r => r.online);
             const tpsPoints = hourRaw.filter(r => r.tps !== null);
             const playerValues = hourRaw.map(r => r.players);
+            const memValues = onlinePoints.map(r => r.memoryMB || 0);
 
             stats.hourly.push({
                 ts: hourTs,
                 avgPlayers: playerValues.length ? +(playerValues.reduce((a, b) => a + b, 0) / playerValues.length).toFixed(1) : 0,
                 maxPlayers: Math.max(0, ...playerValues),
                 avgTps: tpsPoints.length ? +(tpsPoints.reduce((a, b) => a + b.tps, 0) / tpsPoints.length).toFixed(1) : null,
+                avgMemoryMB: memValues.length ? Math.round(memValues.reduce((a, b) => a + b, 0) / memValues.length) : 0,
+                maxMemoryMB: memValues.length ? Math.max(0, ...memValues) : 0,
                 uptime: onlinePoints.length * COLLECT_INTERVAL
             });
 
@@ -166,6 +174,7 @@ class StatsCollector extends EventEmitter {
             const playerValues = dayHourly.map(h => h.avgPlayers);
             const tpsValues = dayHourly.filter(h => h.avgTps !== null).map(h => h.avgTps);
             const uptimeValues = dayHourly.map(h => h.uptime);
+            const memValues = dayHourly.map(h => h.avgMemoryMB || 0);
 
             // Find peak hour
             let peakHour = 0;
@@ -183,6 +192,8 @@ class StatsCollector extends EventEmitter {
                 avgPlayers: playerValues.length ? +(playerValues.reduce((a, b) => a + b, 0) / playerValues.length).toFixed(1) : 0,
                 maxPlayers: Math.max(0, ...dayHourly.map(h => h.maxPlayers)),
                 avgTps: tpsValues.length ? +(tpsValues.reduce((a, b) => a + b, 0) / tpsValues.length).toFixed(1) : null,
+                avgMemoryMB: memValues.length ? Math.round(memValues.reduce((a, b) => a + b, 0) / memValues.length) : 0,
+                maxMemoryMB: dayHourly.length ? Math.max(0, ...dayHourly.map(h => h.maxMemoryMB || 0)) : 0,
                 totalUptime: uptimeValues.reduce((a, b) => a + b, 0),
                 peakHour
             });

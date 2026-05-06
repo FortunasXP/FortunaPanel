@@ -1,8 +1,8 @@
 {
   "name": "fortunapanel",
-  "version": "1.0.0",
+  "version": "1.1",
   "description": "Web-based Minecraft server management panel",
-  "author": "Fortuna",
+  "author": "Pedro Fortuna",
   "main": "electron/main.js",
   "scripts": {
     "start": "node src/index.js",
