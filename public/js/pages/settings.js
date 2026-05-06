@@ -138,6 +138,31 @@ export async function render(container) {
                 </div>
             </div>
 
+            <!-- Backup Rotation (Global) -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Backup Rotation</h2>
+                    <p class="settings-card-desc">Global defaults for automatic backup cleanup. Servers can override individually.</p>
+                </div>
+                <div class="settings-card-body">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="form-label">Max backups per server</label>
+                            <input type="number" class="form-input" id="globalMaxBackups" min="0" value="0" placeholder="0 = unlimited">
+                            <p class="text-[11px] text-muted-foreground mt-1">Oldest backups are deleted when exceeded</p>
+                        </div>
+                        <div>
+                            <label class="form-label">Max backup age (days)</label>
+                            <input type="number" class="form-input" id="globalMaxAge" min="0" value="0" placeholder="0 = unlimited">
+                            <p class="text-[11px] text-muted-foreground mt-1">Backups older than this are auto-deleted</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-card-footer">
+                    <button class="btn btn-primary btn-sm" id="saveGlobalRetention">Save Defaults</button>
+                </div>
+            </div>
+
             <!-- Panel Information Section -->
             <div class="settings-card">
                 <div class="settings-card-header">
@@ -171,6 +196,24 @@ export async function render(container) {
     `;
 
     container.querySelector('#platform').textContent = navigator.platform;
+
+    // Load global retention settings
+    api.get('/servers/backups/retention/global').then(ret => {
+        const maxB = container.querySelector('#globalMaxBackups');
+        const maxA = container.querySelector('#globalMaxAge');
+        if (maxB) maxB.value = ret.maxBackups || 0;
+        if (maxA) maxA.value = ret.maxAgeDays || 0;
+    }).catch(() => {});
+
+    // Save global retention
+    container.querySelector('#saveGlobalRetention')?.addEventListener('click', async () => {
+        const maxBackups = parseInt(container.querySelector('#globalMaxBackups')?.value) || 0;
+        const maxAgeDays = parseInt(container.querySelector('#globalMaxAge')?.value) || 0;
+        try {
+            await api.put('/servers/backups/retention/global', { maxBackups, maxAgeDays });
+            showToast('Global backup rotation saved', 'success');
+        } catch (e) { showToast(e.message, 'error'); }
+    });
 
     // Load update status
     api.get('/updates').then(status => {

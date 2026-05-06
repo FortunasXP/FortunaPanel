@@ -1343,8 +1343,18 @@ async function renderBackupsTab(content, params) {
     content.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
 
     try {
-        const data = await api.get(`/servers/${params.id}/backups`);
+        const [data, retention] = await Promise.all([
+            api.get(`/servers/${params.id}/backups`),
+            api.get(`/servers/${params.id}/backups/retention`).catch(() => ({ maxBackups: 0, maxAgeDays: 0, inherited: true }))
+        ]);
         const backups = data.backups || [];
+
+        const retentionSummary = [];
+        if (retention.maxBackups > 0) retentionSummary.push(`keep ${retention.maxBackups}`);
+        if (retention.maxAgeDays > 0) retentionSummary.push(`${retention.maxAgeDays}d max age`);
+        const retentionLabel = retentionSummary.length > 0
+            ? retentionSummary.join(', ') + (retention.inherited ? ' (global)' : '')
+            : 'Off';
 
         content.innerHTML = `
             <div class="mb-4 flex items-center justify-between">
@@ -1353,6 +1363,34 @@ async function renderBackupsTab(content, params) {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Create Backup
                 </button>
+            </div>
+
+            <!-- Retention Settings -->
+            <div class="mb-4 rounded-lg border border-border bg-card p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="text-sm font-medium">Backup Rotation</h3>
+                        <p class="text-[11px] text-muted-foreground mt-0.5">Auto-delete old backups &middot; Currently: ${retentionLabel}</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="toggleRetention">${retentionSummary.length > 0 ? 'Edit' : 'Configure'}</button>
+                </div>
+                <div id="retentionForm" class="hidden border-t border-border pt-3 mt-1">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="text-[11px] text-muted-foreground block mb-1">Max backups to keep</label>
+                            <input type="number" class="form-input" id="retMaxBackups" min="0" value="${retention.maxBackups || 0}" placeholder="0 = unlimited">
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-muted-foreground block mb-1">Max age (days)</label>
+                            <input type="number" class="form-input" id="retMaxAge" min="0" value="${retention.maxAgeDays || 0}" placeholder="0 = unlimited">
+                        </div>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2">
+                        <button class="btn btn-primary btn-sm" id="saveRetention">Save</button>
+                        ${!retention.inherited ? '<button class="btn btn-secondary btn-sm" id="resetRetention">Use Global Default</button>' : ''}
+                        <span class="text-[11px] text-muted-foreground ml-1">Set to 0 for unlimited</span>
+                    </div>
+                </div>
             </div>
 
             ${backups.length === 0 ? `
@@ -1379,6 +1417,31 @@ async function renderBackupsTab(content, params) {
                 </div>
             `}
         `;
+
+        // Toggle retention form
+        content.querySelector('#toggleRetention')?.addEventListener('click', () => {
+            content.querySelector('#retentionForm')?.classList.toggle('hidden');
+        });
+
+        // Save retention
+        content.querySelector('#saveRetention')?.addEventListener('click', async () => {
+            const maxBackups = parseInt(content.querySelector('#retMaxBackups')?.value) || 0;
+            const maxAgeDays = parseInt(content.querySelector('#retMaxAge')?.value) || 0;
+            try {
+                await api.put(`/servers/${params.id}/backups/retention`, { maxBackups, maxAgeDays });
+                showToast('Retention settings saved', 'success');
+                renderBackupsTab(content, params);
+            } catch (e) { showToast(e.message, 'error'); }
+        });
+
+        // Reset to global
+        content.querySelector('#resetRetention')?.addEventListener('click', async () => {
+            try {
+                await api.put(`/servers/${params.id}/backups/retention`, { useGlobal: true });
+                showToast('Using global retention defaults', 'success');
+                renderBackupsTab(content, params);
+            } catch (e) { showToast(e.message, 'error'); }
+        });
 
         // Create backup
         content.querySelector('#createBackup')?.addEventListener('click', async () => {

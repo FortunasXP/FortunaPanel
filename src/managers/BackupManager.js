@@ -6,6 +6,8 @@ const logger = require('../utils/logger');
 const { safeFilename } = require('../utils/validation');
 
 const BACKUPS_DIR = path.join(config.dataDir, 'backups');
+const RETENTION_PATH = path.join(config.dataDir, 'backup-retention.json');
+const ROTATION_INTERVAL = 60 * 60 * 1000; // Run rotation every hour
 
 // Double-check that a fully resolved path stays inside the backups root for
 // a given serverId. Guards against traversal even if `safeFilename` is bypassed.
@@ -22,8 +24,172 @@ function resolveBackupPath(serverId, filename) {
 class BackupManager {
     constructor(activityLog) {
         this.activityLog = activityLog;
+        this._rotationInterval = null;
+        this._retentionSettings = this._loadRetention();
         if (!fs.existsSync(BACKUPS_DIR)) {
             fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+        }
+    }
+
+    // --- Retention / Rotation ---
+
+    /**
+     * Start periodic backup rotation (call once at startup)
+     */
+    startRotation() {
+        this._rotationInterval = setInterval(() => {
+            this.runRotation().catch(e => logger.warn(`Backup rotation error: ${e.message}`));
+        }, ROTATION_INTERVAL);
+        // Run once shortly after startup
+        setTimeout(() => this.runRotation().catch(() => {}), 30000);
+        logger.info('Backup rotation started (hourly)');
+    }
+
+    stopRotation() {
+        if (this._rotationInterval) {
+            clearInterval(this._rotationInterval);
+            this._rotationInterval = null;
+        }
+    }
+
+    /**
+     * Get retention settings for a server (falls back to global defaults)
+     */
+    getRetention(serverId) {
+        const perServer = this._retentionSettings.servers?.[serverId];
+        const defaults = this._retentionSettings.global || { maxBackups: 0, maxAgeDays: 0 };
+        if (perServer) {
+            return { ...defaults, ...perServer, inherited: false };
+        }
+        return { ...defaults, inherited: true };
+    }
+
+    /**
+     * Get global retention defaults
+     */
+    getGlobalRetention() {
+        return this._retentionSettings.global || { maxBackups: 0, maxAgeDays: 0 };
+    }
+
+    /**
+     * Set retention settings for a specific server (or clear to use global)
+     */
+    setRetention(serverId, settings) {
+        if (!this._retentionSettings.servers) this._retentionSettings.servers = {};
+
+        if (settings === null || settings === undefined) {
+            // Clear per-server override → inherit global
+            delete this._retentionSettings.servers[serverId];
+        } else {
+            this._retentionSettings.servers[serverId] = {
+                maxBackups: Math.max(0, parseInt(settings.maxBackups) || 0),
+                maxAgeDays: Math.max(0, parseInt(settings.maxAgeDays) || 0)
+            };
+        }
+        this._saveRetention();
+        return this.getRetention(serverId);
+    }
+
+    /**
+     * Set global retention defaults
+     */
+    setGlobalRetention(settings) {
+        this._retentionSettings.global = {
+            maxBackups: Math.max(0, parseInt(settings.maxBackups) || 0),
+            maxAgeDays: Math.max(0, parseInt(settings.maxAgeDays) || 0)
+        };
+        this._saveRetention();
+        return this._retentionSettings.global;
+    }
+
+    /**
+     * Apply retention policy to a single server's backups.
+     * Returns number of backups deleted.
+     */
+    applyRetention(serverId) {
+        const policy = this.getRetention(serverId);
+        const { maxBackups, maxAgeDays } = policy;
+
+        // 0 = unlimited (no pruning)
+        if (maxBackups <= 0 && maxAgeDays <= 0) return 0;
+
+        const backups = this.listBackups(serverId);
+        if (backups.length === 0) return 0;
+
+        const toDelete = new Set();
+        const now = Date.now();
+
+        // Age-based: delete backups older than maxAgeDays
+        if (maxAgeDays > 0) {
+            const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+            for (const b of backups) {
+                const age = now - new Date(b.createdAt).getTime();
+                if (age > maxAgeMs) {
+                    toDelete.add(b.filename);
+                }
+            }
+        }
+
+        // Count-based: keep only the newest maxBackups
+        if (maxBackups > 0 && backups.length > maxBackups) {
+            // backups are sorted newest-first
+            const excess = backups.slice(maxBackups);
+            for (const b of excess) {
+                toDelete.add(b.filename);
+            }
+        }
+
+        // Delete
+        let deleted = 0;
+        for (const filename of toDelete) {
+            try {
+                this.deleteBackup(serverId, filename, 'rotation');
+                deleted++;
+            } catch (e) {
+                logger.warn(`Rotation: failed to delete ${filename}: ${e.message}`);
+            }
+        }
+
+        if (deleted > 0) {
+            logger.info(`Rotation: deleted ${deleted} backup(s) for server ${serverId}`);
+        }
+        return deleted;
+    }
+
+    /**
+     * Run rotation across all servers that have backups
+     */
+    async runRotation() {
+        if (!fs.existsSync(BACKUPS_DIR)) return;
+
+        const serverDirs = fs.readdirSync(BACKUPS_DIR, { withFileTypes: true })
+            .filter(d => d.isDirectory())
+            .map(d => d.name);
+
+        let totalDeleted = 0;
+        for (const serverId of serverDirs) {
+            totalDeleted += this.applyRetention(serverId);
+        }
+
+        if (totalDeleted > 0) {
+            logger.info(`Backup rotation complete: ${totalDeleted} total backup(s) pruned`);
+        }
+    }
+
+    _loadRetention() {
+        try {
+            if (fs.existsSync(RETENTION_PATH)) {
+                return JSON.parse(fs.readFileSync(RETENTION_PATH, 'utf-8'));
+            }
+        } catch (e) {}
+        return { global: { maxBackups: 0, maxAgeDays: 0 }, servers: {} };
+    }
+
+    _saveRetention() {
+        try {
+            fs.writeFileSync(RETENTION_PATH, JSON.stringify(this._retentionSettings, null, 2));
+        } catch (e) {
+            logger.warn(`Failed to save retention settings: ${e.message}`);
         }
     }
 

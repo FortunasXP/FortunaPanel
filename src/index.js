@@ -276,6 +276,9 @@ async function start() {
     // Start health monitor
     healthMonitor.start();
 
+    // Start backup rotation
+    backupManager.startRotation();
+
     // Start stats collector
     statsCollector.start();
 
@@ -374,6 +377,7 @@ async function shutdown(signal) {
     shuttingDown = true;
     logger.info(`Shutting down FortunaPanel (${signal})...`);
     try { healthMonitor.stop(); } catch (_) {}
+    try { backupManager.stopRotation(); } catch (_) {}
     try { statsCollector.stop(); } catch (_) {}
     try { updateChecker.stop(); } catch (_) {}
     try { scheduler.stop(); } catch (_) {}
