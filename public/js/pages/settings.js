@@ -95,8 +95,12 @@ export async function render(container) {
                         <h2 class="settings-card-title">User Management</h2>
                         <p class="settings-card-desc">Manage panel users and roles</p>
                     </div>
-                    <button class="btn btn-primary btn-sm" id="addUser">Add User</button>
+                    <div class="flex gap-2">
+                        <button class="btn btn-secondary btn-sm" id="createInvite">Invite Link</button>
+                        <button class="btn btn-primary btn-sm" id="addUser">Add User</button>
+                    </div>
                 </div>
+                <div id="inviteBanner" class="hidden"></div>
                 <div id="userList">
                     <div class="page-loading p-5"><div class="spinner"></div></div>
                 </div>
@@ -454,6 +458,66 @@ export async function render(container) {
         ]);
     });
 
+    // Create invite link
+    container.querySelector('#createInvite')?.addEventListener('click', () => {
+        showModal('Create Invite Link', `
+            <p class="text-sm text-muted-foreground mb-3">Generate a link that lets someone create their own account.</p>
+            <div class="form-group">
+                <label class="form-label">Role</label>
+                <select class="form-select" id="inviteRole">
+                    <option value="viewer">Viewer - Read-only access</option>
+                    <option value="operator">Operator - Can manage servers</option>
+                    <option value="admin">Admin - Full access</option>
+                </select>
+            </div>
+            <div class="form-group mb-0">
+                <label class="form-label">Expires in</label>
+                <select class="form-select" id="inviteExpiry">
+                    <option value="1">1 hour</option>
+                    <option value="24">24 hours</option>
+                    <option value="48" selected>48 hours</option>
+                    <option value="168">7 days</option>
+                    <option value="720">30 days</option>
+                </select>
+            </div>
+        `, [
+            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+            { id: 'create', label: 'Create Invite', class: 'btn-primary', onClick: async () => {
+                const role = document.querySelector('#inviteRole')?.value || 'viewer';
+                const expiryHours = parseInt(document.querySelector('#inviteExpiry')?.value) || 48;
+                try {
+                    const result = await api.post('/auth/invites', { role, expiryHours });
+                    const inviteUrl = `${location.origin}/#invite=${result.code}`;
+                    // Show the link in the banner area
+                    const banner = container.querySelector('#inviteBanner');
+                    if (banner) {
+                        banner.className = 'mx-4 mb-2 rounded border border-border bg-muted px-3 py-2';
+                        banner.innerHTML = `
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="min-w-0">
+                                    <p class="text-[11px] text-muted-foreground">Invite link (${escapeHtml(role)}, expires ${new Date(result.expiresAt).toLocaleString()}):</p>
+                                    <p class="font-mono text-xs break-all select-all mt-0.5">${escapeHtml(inviteUrl)}</p>
+                                </div>
+                                <div class="flex gap-1.5 shrink-0">
+                                    <button class="btn btn-sm btn-primary" id="copyInvite">Copy</button>
+                                    <button class="btn btn-sm btn-secondary" id="dismissInvite">&times;</button>
+                                </div>
+                            </div>
+                        `;
+                        banner.querySelector('#copyInvite')?.addEventListener('click', () => {
+                            navigator.clipboard.writeText(inviteUrl).then(() => showToast('Invite link copied', 'success'));
+                        });
+                        banner.querySelector('#dismissInvite')?.addEventListener('click', () => {
+                            banner.className = 'hidden';
+                            banner.innerHTML = '';
+                        });
+                    }
+                    showToast('Invite link created', 'success');
+                } catch (e) { showToast(e.message, 'error'); }
+            }}
+        ]);
+    });
+
     // Add user
     container.querySelector('#addUser')?.addEventListener('click', () => {
         showModal('Add User', `
@@ -507,6 +571,7 @@ async function loadUsers(container) {
                 operator: 'border-border text-muted-foreground',
                 viewer: 'border-border text-muted-foreground'
             };
+            const isOnlyAdmin = u.role === 'admin' && users.filter(x => x.role === 'admin').length <= 1;
             return `
                 <div class="list-item">
                     <div class="flex items-center gap-2.5">
@@ -517,13 +582,35 @@ async function loadUsers(container) {
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="rounded-full border px-2 py-0.5 text-[11px] capitalize ${roleClasses[u.role] || 'border-border text-muted-foreground'}">${escapeHtml(u.role)}</span>
-                        ${u.role !== 'admin' || users.filter(x => x.role === 'admin').length > 1 ? `
+                        <button class="btn btn-sm btn-secondary" data-reset-pw="${escapeHtml(u.username)}">Reset Password</button>
+                        ${!isOnlyAdmin ? `
                             <button class="btn btn-sm btn-danger" data-delete-user="${escapeHtml(u.username)}">Remove</button>
                         ` : ''}
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Wire reset password buttons
+        userList.querySelectorAll('[data-reset-pw]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const username = btn.dataset.resetPw;
+                try {
+                    const result = await api.post(`/auth/users/${encodeURIComponent(username)}/reset-password`);
+                    const resetUrl = `${location.origin}/#reset=${result.code}`;
+                    showModal('Password Reset Link', `
+                        <p class="mb-3 text-sm">Share this link with <strong>${escapeHtml(username)}</strong> to let them set a new password:</p>
+                        <div class="rounded border border-border bg-muted px-3 py-2 font-mono text-xs break-all select-all">${escapeHtml(resetUrl)}</div>
+                        <p class="mt-2 text-[11px] text-muted-foreground">Expires: ${new Date(result.expiresAt).toLocaleString()}</p>
+                    `, [
+                        { id: 'copy', label: 'Copy Link', class: 'btn-primary', onClick: () => {
+                            navigator.clipboard.writeText(resetUrl).then(() => showToast('Link copied', 'success'));
+                        }},
+                        { id: 'close', label: 'Close', class: 'btn-secondary' }
+                    ]);
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        });
 
         // Wire delete buttons
         userList.querySelectorAll('[data-delete-user]').forEach(btn => {

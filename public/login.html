@@ -301,7 +301,110 @@
             }
         });
 
-        checkAuth();
+        // Handle invite links: #invite=CODE
+        async function checkInviteOrReset() {
+            const hash = window.location.hash;
+
+            if (hash.startsWith('#invite=')) {
+                const code = hash.slice(8);
+                try {
+                    const res = await fetch(`/api/auth/invite/${encodeURIComponent(code)}`);
+                    const data = await res.json();
+                    if (res.ok && data.valid) {
+                        heading.textContent = 'Create your account';
+                        subtitle.textContent = `You've been invited as ${data.role}. Choose a username and password.`;
+                        submitText.textContent = 'Create Account';
+                        setupNote.classList.add('hidden');
+                        helpNote.classList.add('hidden');
+                        passwordHint.classList.remove('hidden');
+                        pwInput.placeholder = 'Choose a strong password';
+                        pwInput.setAttribute('autocomplete', 'new-password');
+
+                        // Override form submit for invite flow
+                        form.onsubmit = async (e) => {
+                            e.preventDefault();
+                            clearError();
+                            setSubmitting(true);
+                            const username = document.getElementById('username').value;
+                            const password = document.getElementById('password').value;
+                            try {
+                                const r = await fetch('/api/auth/invite/redeem', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ code, username, password })
+                                });
+                                const d = await r.json();
+                                if (r.ok && d.token) {
+                                    localStorage.setItem('token', d.token);
+                                    if (d.username) localStorage.setItem('fortuna-username', d.username);
+                                    window.location.hash = '';
+                                    window.location.href = '/';
+                                } else {
+                                    showError(d.error || 'Failed to create account');
+                                    setSubmitting(false);
+                                }
+                            } catch (_) {
+                                showError('Connection failed');
+                                setSubmitting(false);
+                            }
+                        };
+                        return true;
+                    }
+                } catch (_) {}
+                showError('This invite link is invalid or has expired.');
+                return true;
+            }
+
+            if (hash.startsWith('#reset=')) {
+                const code = hash.slice(7);
+                heading.textContent = 'Reset your password';
+                subtitle.textContent = 'Enter your new password below.';
+                submitText.textContent = 'Reset Password';
+                setupNote.classList.add('hidden');
+                helpNote.classList.add('hidden');
+                passwordHint.classList.remove('hidden');
+                pwInput.placeholder = 'New password';
+                pwInput.setAttribute('autocomplete', 'new-password');
+                // Hide username field for reset
+                const usernameGroup = document.getElementById('username').closest('.grid.gap-2');
+                if (usernameGroup) usernameGroup.style.display = 'none';
+
+                form.onsubmit = async (e) => {
+                    e.preventDefault();
+                    clearError();
+                    setSubmitting(true);
+                    const newPassword = document.getElementById('password').value;
+                    try {
+                        const r = await fetch('/api/auth/reset-password', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ code, newPassword })
+                        });
+                        const d = await r.json();
+                        if (r.ok && d.success) {
+                            window.location.hash = '';
+                            heading.textContent = 'Password reset';
+                            subtitle.textContent = `Password updated for ${d.username}. You can now sign in.`;
+                            form.style.display = 'none';
+                        } else {
+                            showError(d.error || 'Reset failed');
+                            setSubmitting(false);
+                        }
+                    } catch (_) {
+                        showError('Connection failed');
+                        setSubmitting(false);
+                    }
+                };
+                return true;
+            }
+
+            return false;
+        }
+
+        // Boot: check invite/reset hash first, then normal auth flow
+        checkInviteOrReset().then(handled => {
+            if (!handled) checkAuth();
+        });
     </script>
 </body>
 </html>

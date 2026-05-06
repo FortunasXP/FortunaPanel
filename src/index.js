@@ -24,6 +24,7 @@ const HealthMonitor = require('./managers/HealthMonitor');
 const DnsManager = require('./managers/DnsManager');
 const StatsCollector = require('./managers/StatsCollector');
 const UpdateChecker = require('./managers/UpdateChecker');
+const InviteManager = require('./managers/InviteManager');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -149,6 +150,7 @@ networkManager.setDnsManager(dnsManager);
 scheduler.networkManager = networkManager;
 const statsCollector = new StatsCollector(serverManager, systemMonitor);
 const updateChecker = new UpdateChecker();
+const inviteManager = new InviteManager();
 
 // Make managers available to routes
 app.locals.serverManager = serverManager;
@@ -170,6 +172,7 @@ app.locals.healthMonitor = healthMonitor;
 app.locals.dnsManager = dnsManager;
 app.locals.statsCollector = statsCollector;
 app.locals.updateChecker = updateChecker;
+app.locals.inviteManager = inviteManager;
 
 // API routes
 const api = express.Router();
@@ -285,6 +288,9 @@ async function start() {
     // Start update checker
     updateChecker.start();
 
+    // Start invite manager
+    inviteManager.start();
+
     // Start scheduler
     scheduler.start();
 
@@ -380,6 +386,7 @@ async function shutdown(signal) {
     try { backupManager.stopRotation(); } catch (_) {}
     try { statsCollector.stop(); } catch (_) {}
     try { updateChecker.stop(); } catch (_) {}
+    try { inviteManager.stop(); } catch (_) {}
     try { scheduler.stop(); } catch (_) {}
     try { resourceLimiter.stop(); } catch (_) {}
     try { sftpServer.stop(); } catch (_) {}

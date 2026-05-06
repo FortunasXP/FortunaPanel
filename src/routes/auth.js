@@ -341,6 +341,130 @@ router.delete('/users/:username', authMiddleware, requireGlobalPermission('panel
     res.json({ success: true });
 });
 
+// POST /api/auth/users/:username/reset-password - Generate a password reset token (admin only)
+router.post('/users/:username/reset-password', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
+    const admin = getUserStore(req).getAdmin();
+    if (!admin) return res.status(500).json({ error: 'Admin account not found' });
+    if (req.user.username !== admin.username && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admins can reset passwords' });
+    }
+
+    const target = getUserStore(req).getUser(req.params.username);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Invite manager not available' });
+
+    const token = inviteManager.createResetToken(req.params.username, req.user.username);
+    logger.info(`Password reset token created for ${req.params.username} by ${req.user.username}`);
+    res.json({ code: token.code, expiresAt: token.expiresAt });
+});
+
+// POST /api/auth/reset-password - Redeem a reset token and set new password (no auth required)
+router.post('/reset-password', async (req, res) => {
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Not available' });
+
+    const { code, newPassword } = req.body;
+    if (!code || !newPassword) return res.status(400).json({ error: 'Code and new password required' });
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const token = inviteManager.redeemResetToken(code);
+    if (!token) return res.status(400).json({ error: 'Invalid or expired reset code' });
+
+    const user = getUserStore(req).getUser(token.username);
+    if (!user) return res.status(400).json({ error: 'User no longer exists' });
+
+    getUserStore(req).updatePassword(token.username, await bcrypt.hash(newPassword, 10));
+    inviteManager.markResetUsed(code);
+    logger.info(`Password reset completed for ${token.username}`);
+    res.json({ success: true, username: token.username });
+});
+
+// POST /api/auth/invites - Create an invite link (admin only)
+router.post('/invites', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
+    const admin = getUserStore(req).getAdmin();
+    if (!admin) return res.status(500).json({ error: 'Admin account not found' });
+    if (req.user.username !== admin.username && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admins can create invites' });
+    }
+
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Invite manager not available' });
+
+    const role = req.body.role || 'viewer';
+    const validRoles = ['admin', 'operator', 'viewer'];
+    if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: `Role must be one of: ${validRoles.join(', ')}` });
+    }
+
+    const expiryHours = Math.min(Math.max(parseInt(req.body.expiryHours) || 48, 1), 720); // 1h to 30d
+    const invite = inviteManager.createInvite(role, req.user.username, expiryHours);
+    res.json({ code: invite.code, role: invite.role, expiresAt: invite.expiresAt });
+});
+
+// GET /api/auth/invites - List all invites (admin only)
+router.get('/invites', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Invite manager not available' });
+    res.json({ invites: inviteManager.listInvites() });
+});
+
+// DELETE /api/auth/invites/:code - Delete an invite (admin only)
+router.delete('/invites/:code', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Invite manager not available' });
+    inviteManager.deleteInvite(req.params.code);
+    res.json({ success: true });
+});
+
+// GET /api/auth/invite/:code - Validate an invite code (no auth required)
+router.get('/invite/:code', (req, res) => {
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Not available' });
+
+    const invite = inviteManager.redeemInvite(req.params.code);
+    if (!invite) return res.status(400).json({ error: 'Invalid or expired invite' });
+    res.json({ valid: true, role: invite.role, expiresAt: invite.expiresAt });
+});
+
+// POST /api/auth/invite/redeem - Redeem an invite and create account (no auth required)
+router.post('/invite/redeem', async (req, res) => {
+    const inviteManager = req.app.locals.inviteManager;
+    if (!inviteManager) return res.status(503).json({ error: 'Not available' });
+
+    const { code, username, password } = req.body;
+    if (!code || !username || !password) {
+        return res.status(400).json({ error: 'Code, username, and password required' });
+    }
+
+    let safeUsername;
+    try {
+        safeUsername = requireString(username, 'username', { max: 64 });
+        requireString(password, 'password', { min: 6, max: 256, trim: false });
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
+
+    const invite = inviteManager.redeemInvite(code);
+    if (!invite) return res.status(400).json({ error: 'Invalid or expired invite' });
+
+    if (getUserStore(req).getUser(safeUsername)) {
+        return res.status(400).json({ error: 'Username already taken' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    getUserStore(req).createUser(safeUsername, passwordHash, invite.role);
+    inviteManager.markInviteUsed(code, safeUsername);
+
+    logger.info(`User ${safeUsername} created via invite (role: ${invite.role})`);
+
+    const token = signToken({ username: safeUsername, role: invite.role });
+    res.json({ token, username: safeUsername, role: invite.role });
+});
+
 // PUT /api/auth/users/:username/role - Update user role (admin only)
 router.put('/users/:username/role', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
     const admin = getUserStore(req).getAdmin();
