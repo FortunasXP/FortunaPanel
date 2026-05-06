@@ -221,6 +221,7 @@ function renderPage(container, params) {
             <div class="tab ${activeTab === 'files' ? 'active' : ''}" data-tab="files">Files</div>
             ${!isProxyServer() ? `<div class="tab ${activeTab === 'plugins' ? 'active' : ''}" data-tab="plugins">Plugins</div>` : ''}
             <div class="tab ${activeTab === 'backups' ? 'active' : ''}" data-tab="backups">Backups</div>
+            <div class="tab ${activeTab === 'snapshots' ? 'active' : ''}" data-tab="snapshots">Snapshots</div>
             <div class="tab ${activeTab === 'startup' ? 'active' : ''}" data-tab="startup">Startup</div>
             ${!isProxyServer() ? `<div class="tab ${activeTab === 'properties' ? 'active' : ''}" data-tab="properties">Properties</div>` : ''}
             <div class="tab ${activeTab === 'config' ? 'active' : ''}" data-tab="config">Config</div>
@@ -380,6 +381,9 @@ function renderTab(container, params) {
                 break;
             case 'backups':
                 renderBackupsTab(content, params);
+                break;
+            case 'snapshots':
+                renderSnapshotsTab(content, params);
                 break;
             case 'startup':
                 renderStartupTab(content, params);
@@ -1490,6 +1494,131 @@ async function renderBackupsTab(content, params) {
                     await api.del(`/servers/${params.id}/backups/${btn.dataset.deleteBackup}`);
                     showToast('Backup deleted', 'success');
                     renderBackupsTab(content, params);
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        });
+    } catch (e) {
+        content.innerHTML = `<div class="empty-state"><p>${escapeHtml(e.message)}</p></div>`;
+    }
+}
+
+async function renderSnapshotsTab(content, params) {
+    content.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+
+    try {
+        const data = await api.get(`/servers/${params.id}/snapshots`);
+        const snapshots = data.snapshots || [];
+        const totalSize = data.totalSize || 0;
+        const count = data.count || 0;
+
+        const formatSize = (bytes) => {
+            if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+            if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            return (bytes / 1024).toFixed(1) + ' KB';
+        };
+
+        const isRunning = server.status === 'running' || server.status === 'starting';
+
+        content.innerHTML = `
+            <div class="flex items-center justify-between mb-5">
+                <div>
+                    <h3 class="text-sm font-semibold">Snapshots</h3>
+                    <p class="text-xs text-muted-foreground mt-0.5">${count} snapshot${count !== 1 ? 's' : ''} &middot; ${formatSize(totalSize)} total</p>
+                </div>
+                <button class="btn btn-primary btn-sm" id="createSnapshotBtn" ${isRunning ? 'disabled title="Stop the server first"' : ''}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    Create Snapshot
+                </button>
+            </div>
+
+            ${isRunning ? `
+                <div class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-4 text-xs text-amber-400">
+                    Server must be stopped to create or restore snapshots (data consistency).
+                </div>
+            ` : ''}
+
+            ${snapshots.length === 0 ? `
+                <div class="empty-state p-10">
+                    <h3>No snapshots yet</h3>
+                    <p>Snapshots capture the full server state — world, plugins, configs — for instant rollback.</p>
+                </div>
+            ` : `
+                <div class="space-y-2">
+                    ${snapshots.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(s => `
+                        <div class="rounded-lg border border-border bg-card p-4">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <div class="font-medium text-sm">${escapeHtml(s.name)}</div>
+                                    ${s.description ? `<div class="text-xs text-muted-foreground mt-0.5">${escapeHtml(s.description)}</div>` : ''}
+                                    <div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                        <span>${formatSize(s.size)}</span>
+                                        <span>${new Date(s.createdAt).toLocaleString()}</span>
+                                        <span>by ${escapeHtml(s.createdBy)}</span>
+                                        ${s.lastRestoredAt ? `<span class="text-amber-400">Restored ${new Date(s.lastRestoredAt).toLocaleDateString()}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <button class="btn btn-sm btn-secondary" data-restore-snapshot="${escapeHtml(s.id)}" ${isRunning ? 'disabled' : ''} title="Restore">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                    </button>
+                                    <a class="btn btn-sm btn-secondary" href="/api/servers/${encodeURIComponent(params.id)}/snapshots/${encodeURIComponent(s.id)}/download" title="Download">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    </a>
+                                    <button class="btn btn-sm btn-danger" data-delete-snapshot="${escapeHtml(s.id)}" title="Delete">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `}
+        `;
+
+        // Create snapshot
+        content.querySelector('#createSnapshotBtn')?.addEventListener('click', async () => {
+            const name = prompt('Snapshot name (optional):');
+            if (name === null) return; // cancelled
+
+            const btn = content.querySelector('#createSnapshotBtn');
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            try {
+                await api.post(`/servers/${params.id}/snapshots`, {
+                    name: name || undefined,
+                    description: ''
+                });
+                showToast('Snapshot created!', 'success');
+                renderSnapshotsTab(content, params);
+            } catch (e) {
+                showToast(e.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Create Snapshot';
+            }
+        });
+
+        // Restore snapshot
+        content.querySelectorAll('[data-restore-snapshot]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Restore this snapshot? This will replace ALL current server files.')) return;
+                try {
+                    btn.disabled = true;
+                    await api.post(`/servers/${params.id}/snapshots/${btn.dataset.restoreSnapshot}/restore`);
+                    showToast('Snapshot restored successfully!', 'success');
+                    renderSnapshotsTab(content, params);
+                } catch (e) { showToast(e.message, 'error'); btn.disabled = false; }
+            });
+        });
+
+        // Delete snapshot
+        content.querySelectorAll('[data-delete-snapshot]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Delete this snapshot permanently?')) return;
+                try {
+                    await api.del(`/servers/${params.id}/snapshots/${btn.dataset.deleteSnapshot}`);
+                    showToast('Snapshot deleted', 'success');
+                    renderSnapshotsTab(content, params);
                 } catch (e) { showToast(e.message, 'error'); }
             });
         });

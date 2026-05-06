@@ -385,12 +385,16 @@ class ServerManager extends EventEmitter {
         const instance = this.servers.get(id);
         if (!instance) throw new Error('Server not found');
 
-        const result = instance.start();
+        const result = instance.start(this._dockerManager || null);
         if (result) {
             instance.config.lastStarted = new Date().toISOString();
             await this.saveRegistry();
         }
         return result;
+    }
+
+    setDockerManager(dockerManager) {
+        this._dockerManager = dockerManager;
     }
 
     async stopServer(id) {

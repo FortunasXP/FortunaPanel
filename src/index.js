@@ -25,6 +25,11 @@ const DnsManager = require('./managers/DnsManager');
 const StatsCollector = require('./managers/StatsCollector');
 const UpdateChecker = require('./managers/UpdateChecker');
 const InviteManager = require('./managers/InviteManager');
+const SnapshotManager = require('./managers/SnapshotManager');
+const DockerManager = require('./managers/DockerManager');
+const ProxyManager = require('./managers/ProxyManager');
+const SSLManager = require('./managers/SSLManager');
+const NodeManager = require('./managers/NodeManager');
 const { setupWebSocket } = require('./websocket');
 
 const app = express();
@@ -114,6 +119,19 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+// ACME HTTP-01 challenge handler (must come before static files).
+// Uses a closure so it can reference sslManager after it's created below.
+app.use((req, res, next) => {
+    if (!req.path.startsWith('/.well-known/acme-challenge/')) return next();
+    const token = req.path.split('/').pop();
+    const challenges = sslManager?.getChallengeTokens() || {};
+    if (challenges[token]) {
+        res.type('text/plain').send(challenges[token]);
+    } else {
+        res.status(404).send('Not found');
+    }
+});
+
 // Static files - disable etag to prevent stale module caching during development
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: false }));
 
@@ -151,6 +169,12 @@ scheduler.networkManager = networkManager;
 const statsCollector = new StatsCollector(serverManager, systemMonitor);
 const updateChecker = new UpdateChecker();
 const inviteManager = new InviteManager();
+const snapshotManager = new SnapshotManager(serverManager, activityLog);
+const dockerManager = new DockerManager(serverManager);
+serverManager.setDockerManager(dockerManager);
+const proxyManager = new ProxyManager(serverManager);
+const sslManager = new SSLManager();
+const nodeManager = new NodeManager(serverManager);
 
 // Make managers available to routes
 app.locals.serverManager = serverManager;
@@ -173,6 +197,11 @@ app.locals.dnsManager = dnsManager;
 app.locals.statsCollector = statsCollector;
 app.locals.updateChecker = updateChecker;
 app.locals.inviteManager = inviteManager;
+app.locals.snapshotManager = snapshotManager;
+app.locals.dockerManager = dockerManager;
+app.locals.proxyManager = proxyManager;
+app.locals.sslManager = sslManager;
+app.locals.nodeManager = nodeManager;
 
 // API routes
 const api = express.Router();
@@ -182,6 +211,7 @@ api.use('/jars', require('./routes/jars'));
 api.use('/servers', require('./routes/files'));
 api.use('/servers', require('./routes/players'));
 api.use('/servers', require('./routes/backups'));
+api.use('/servers', require('./routes/snapshots'));
 api.use('/servers', require('./routes/plugins'));
 api.use('/servers', require('./routes/logs'));
 api.use('/stats', require('./routes/stats'));
@@ -200,6 +230,9 @@ api.use('/dns', require('./routes/dns'));
 api.use('/templates', require('./routes/templates'));
 api.use('/jobs', require('./routes/jobs'));
 api.use('/updates', require('./routes/updates'));
+api.use('/docker', require('./routes/docker'));
+api.use('/proxy', require('./routes/proxy'));
+api.use('/nodes', require('./routes/nodes'));
 
 app.use('/api', api);
 app.use('/api/v1', api);
@@ -311,6 +344,15 @@ async function start() {
         logger.warn(`SFTP server failed to start: ${e.message}`);
     }
 
+    // Start proxy manager
+    proxyManager.start();
+
+    // Start SSL renewal checker
+    sslManager.startRenewal();
+
+    // Start node manager
+    nodeManager.start();
+
     // Enable console log persistence
     setupConsolePersistence(serverManager);
 
@@ -390,6 +432,9 @@ async function shutdown(signal) {
     try { scheduler.stop(); } catch (_) {}
     try { resourceLimiter.stop(); } catch (_) {}
     try { sftpServer.stop(); } catch (_) {}
+    try { proxyManager.stop(); } catch (_) {}
+    try { sslManager.stop(); } catch (_) {}
+    try { nodeManager.stop(); } catch (_) {}
     try { revokedTokenStore.stop(); } catch (_) {}
     try { apiKeyManager.flush?.(); } catch (_) {}
     try { await serverManager.shutdownAll(); } catch (_) {}

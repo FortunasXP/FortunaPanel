@@ -51,7 +51,7 @@ class ServerInstance extends EventEmitter {
         this.lastTps = null;
     }
 
-    start() {
+    start(dockerManager) {
         // Guard against concurrent calls: check + set status before any async
         // work so a second caller sees 'starting' and bails.
         if (this.process || this.status === 'starting' || this.status === 'running') {
@@ -64,34 +64,50 @@ class ServerInstance extends EventEmitter {
         }
 
         this._setStatus('starting');
+        this._dockerManager = null;
 
-        const { javaPath, memory, jvmArgs, jarFile, directory } = this.config;
-        const args = [
-            `-Xms${memory.min}`,
-            `-Xmx${memory.max}`,
-            ...(jvmArgs || []),
-            '-jar',
-            jarFile,
-            'nogui'
-        ];
+        // Docker mode: start inside a container
+        if (this.config.docker?.enabled && dockerManager) {
+            this._dockerManager = dockerManager;
+            try {
+                this.process = dockerManager.startContainer(this);
+            } catch (err) {
+                logger.error(`Failed to start Docker container for ${this.name}: ${err.message}`);
+                this._setStatus('stopped');
+                this.emit('error', { message: `Docker start failed: ${err.message}` });
+                return false;
+            }
+        } else {
+            // Bare-metal mode: spawn Java directly
+            const { javaPath, memory, jvmArgs, jarFile, directory } = this.config;
+            const args = [
+                `-Xms${memory.min}`,
+                `-Xmx${memory.max}`,
+                ...(jvmArgs || []),
+                '-jar',
+                jarFile,
+                'nogui'
+            ];
 
-        logger.info(`Starting server ${this.name}: ${javaPath} ${args.join(' ')}`);
+            logger.info(`Starting server ${this.name}: ${javaPath} ${args.join(' ')}`);
 
-        try {
-            this.process = spawn(javaPath || 'java', args, {
-                cwd: directory,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                windowsHide: true
-            });
-        } catch (err) {
-            logger.error(`Failed to spawn server ${this.name}: ${err.message}`);
-            this._setStatus('stopped');
-            this.emit('error', { message: `Failed to start: ${err.message}` });
-            return false;
+            try {
+                this.process = spawn(javaPath || 'java', args, {
+                    cwd: directory,
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    windowsHide: true
+                });
+            } catch (err) {
+                logger.error(`Failed to spawn server ${this.name}: ${err.message}`);
+                this._setStatus('stopped');
+                this.emit('error', { message: `Failed to start: ${err.message}` });
+                return false;
+            }
         }
 
         this.pid = this.process.pid;
-        logger.info(`Server ${this.name} spawned with PID ${this.pid}`);
+        const mode = this.config.docker?.enabled ? 'Docker' : 'PID';
+        logger.info(`Server ${this.name} spawned with ${mode} ${this.pid}`);
 
         this.process.stdout.on('data', (chunk) => this._onStdout(chunk));
         this.process.stderr.on('data', (chunk) => this._onStderr(chunk));
@@ -154,13 +170,14 @@ class ServerInstance extends EventEmitter {
     }
 
     async restart() {
+        const dm = this._dockerManager;
         this.gracefulStop = true;
         if (this.process) {
             await this.stop();
         }
         // Small delay between stop and start
         await new Promise(r => setTimeout(r, 1000));
-        return this.start();
+        return this.start(dm);
     }
 
     sendCommand(command) {
@@ -175,7 +192,9 @@ class ServerInstance extends EventEmitter {
     }
 
     kill() {
-        if (this.pid) {
+        if (this.config.docker?.enabled && this._dockerManager) {
+            this._dockerManager.killContainer(this.id);
+        } else if (this.pid) {
             killProcessTree(this.pid);
         }
         if (this.process) {
