@@ -1,6 +1,6 @@
 {
   "name": "fortunapanel",
-  "version": "1.2",
+  "version": "1.2.0",
   "description": "Web-based Minecraft server management panel",
   "author": "Pedro Fortuna",
   "main": "electron/main.js",
