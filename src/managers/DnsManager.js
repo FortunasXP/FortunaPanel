@@ -40,40 +40,54 @@ class DnsManager extends EventEmitter {
     }
 
     // --- Encryption ---
-
-    _encrypt(text) {
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-cbc', this._encryptionKey, iv);
-        let encrypted = cipher.update(text, 'utf-8', 'hex');
-        encrypted += cipher.final('hex');
-        return { encrypted, iv: iv.toString('hex') };
-    }
-
-    _decrypt(encrypted, ivHex) {
-        const iv = Buffer.from(ivHex, 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', this._encryptionKey, iv);
-        let decrypted = decipher.update(encrypted, 'hex', 'utf-8');
-        decrypted += decipher.final('utf-8');
-        return decrypted;
-    }
+    //
+    // New format: AES-256-GCM with per-field IV and auth tag. The 'enc'
+    // marker on the encrypted credentials object lets us migrate legacy
+    // CBC ciphertext lazily — when we decrypt a v1 entry, we re-encrypt
+    // as v2 on the next save.
+    //
+    // v1 (legacy CBC, no auth):  { encrypted: { key: hex }, iv: ivHex }
+    // v2 (current GCM, AEAD):    { enc: 'gcm', credentials: { key: { ct, iv, tag } } }
 
     _encryptCredentials(credentials) {
-        const iv = crypto.randomBytes(16);
-        const ivHex = iv.toString('hex');
         const encrypted = {};
         for (const [key, value] of Object.entries(credentials)) {
-            const cipher = crypto.createCipheriv('aes-256-cbc', this._encryptionKey, iv);
-            let enc = cipher.update(String(value), 'utf-8', 'hex');
-            enc += cipher.final('hex');
-            encrypted[key] = enc;
+            const iv = crypto.randomBytes(12); // GCM standard: 96-bit IV
+            const cipher = crypto.createCipheriv('aes-256-gcm', this._encryptionKey, iv);
+            const ct = Buffer.concat([cipher.update(String(value), 'utf-8'), cipher.final()]);
+            const tag = cipher.getAuthTag();
+            encrypted[key] = {
+                ct: ct.toString('hex'),
+                iv: iv.toString('hex'),
+                tag: tag.toString('hex')
+            };
         }
-        return { encrypted, iv: ivHex };
+        return { enc: 'gcm', credentials: encrypted };
     }
 
-    _decryptCredentials(encrypted, ivHex) {
+    _decryptCredentials(payload, ivHex) {
+        // v2 format: payload = { enc: 'gcm', credentials: { key: {ct,iv,tag} } }
+        if (payload && payload.enc === 'gcm' && payload.credentials) {
+            const decrypted = {};
+            for (const [key, blob] of Object.entries(payload.credentials)) {
+                const iv = Buffer.from(blob.iv, 'hex');
+                const tag = Buffer.from(blob.tag, 'hex');
+                const ct = Buffer.from(blob.ct, 'hex');
+                const decipher = crypto.createDecipheriv('aes-256-gcm', this._encryptionKey, iv);
+                decipher.setAuthTag(tag);
+                const dec = Buffer.concat([decipher.update(ct), decipher.final()]);
+                decrypted[key] = dec.toString('utf-8');
+            }
+            return decrypted;
+        }
+
+        // v1 legacy: AES-256-CBC, shared IV, no integrity tag. Decrypt so
+        // existing installations keep working; the next save will re-emit
+        // as v2.
+        const encrypted = payload;
         const iv = Buffer.from(ivHex, 'hex');
         const decrypted = {};
-        for (const [key, value] of Object.entries(encrypted)) {
+        for (const [key, value] of Object.entries(encrypted || {})) {
             const decipher = crypto.createDecipheriv('aes-256-cbc', this._encryptionKey, iv);
             let dec = decipher.update(value, 'hex', 'utf-8');
             dec += decipher.final('utf-8');
@@ -86,14 +100,13 @@ class DnsManager extends EventEmitter {
 
     addProvider({ name, type, credentials }) {
         const id = uuidv4().slice(0, 8);
-        const { encrypted, iv } = this._encryptCredentials(credentials);
-
+        // v2 payload is self-contained — no separate credentialsIv field
+        // because each field has its own IV + auth tag.
         const provider = {
             id,
             name,
             type,
-            credentials: encrypted,
-            credentialsIv: iv,
+            credentials: this._encryptCredentials(credentials),
             createdAt: new Date().toISOString(),
             lastTestedAt: null,
             testResult: null
@@ -112,9 +125,11 @@ class DnsManager extends EventEmitter {
 
         if (updates.name) provider.name = updates.name;
         if (updates.credentials) {
-            const { encrypted, iv } = this._encryptCredentials(updates.credentials);
-            provider.credentials = encrypted;
-            provider.credentialsIv = iv;
+            provider.credentials = this._encryptCredentials(updates.credentials);
+            // Legacy CBC providers had a separate `credentialsIv` — drop
+            // it on update so we never accidentally feed it into the v2
+            // decrypt path.
+            delete provider.credentialsIv;
             provider.testResult = null;
             provider.lastTestedAt = null;
         }

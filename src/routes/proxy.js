@@ -31,8 +31,9 @@ router.post('/routes', requireGlobalPermission('panel.settings'), (req, res) => 
 // PUT /api/proxy/routes/:id - Update a proxy route
 router.put('/routes/:id', requireGlobalPermission('panel.settings'), (req, res) => {
     const proxyManager = req.app.locals.proxyManager;
+    const { name, listenPort, targetHost, targetPort, serverId, enabled } = req.body;
     try {
-        const route = proxyManager.updateRoute(req.params.id, req.body);
+        const route = proxyManager.updateRoute(req.params.id, { name, listenPort, targetHost, targetPort, serverId, enabled });
         res.json(route);
     } catch (e) {
         res.status(400).json({ error: e.message });
@@ -60,6 +61,9 @@ router.get('/ssl', requireGlobalPermission('panel.read'), (req, res) => {
 router.post('/ssl/custom', requireGlobalPermission('panel.settings'), (req, res) => {
     const sslManager = req.app.locals.sslManager;
     const { cert, key, ca } = req.body;
+    if (!cert || !key) {
+        return res.status(400).json({ error: 'Certificate and private key are required' });
+    }
     try {
         const status = sslManager.setCustomCert({ cert, key, ca });
         res.json(status);
@@ -72,6 +76,9 @@ router.post('/ssl/custom', requireGlobalPermission('panel.settings'), (req, res)
 router.post('/ssl/auto', requireGlobalPermission('panel.settings'), asyncRoute(async (req, res) => {
     const sslManager = req.app.locals.sslManager;
     const { domain, email } = req.body;
+    if (!domain || !email) {
+        return res.status(400).json({ error: 'Domain and email are required' });
+    }
     const status = await sslManager.enableAutoSSL(domain, email);
     res.json(status);
 }));

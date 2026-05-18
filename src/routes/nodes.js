@@ -44,8 +44,9 @@ router.get('/:id', requireGlobalPermission('panel.read'), (req, res) => {
 // PUT /api/nodes/:id - Update a node
 router.put('/:id', requireGlobalPermission('panel.settings'), (req, res) => {
     const nodeManager = req.app.locals.nodeManager;
+    const { name, host, description } = req.body;
     try {
-        const node = nodeManager.updateNode(req.params.id, req.body);
+        const node = nodeManager.updateNode(req.params.id, { name, host, description });
         res.json(node);
     } catch (e) {
         res.status(400).json({ error: e.message });

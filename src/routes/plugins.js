@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { authMiddleware, requirePermission, requireGlobalPermission } = require('../middleware/auth');
+const { pathInside, safeFilename } = require('../utils/validation');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -11,7 +12,7 @@ function getServerDir(req) {
     const manager = req.app.locals.serverManager;
     const instance = manager.getServer(req.params.id);
     if (!instance) return null;
-    return instance.config.directory;
+    return path.resolve(instance.config.directory);
 }
 
 // GET /api/servers/modrinth/search - Search Modrinth for plugins/mods
@@ -48,8 +49,17 @@ router.post('/:id/plugins/install-remote', requirePermission('plugin.install'), 
     const serverDir = getServerDir(req);
     if (!serverDir) return res.status(404).json({ error: 'Server not found' });
 
-    const { downloadUrl, filename, folder } = req.body;
-    if (!downloadUrl || !filename) return res.status(400).json({ error: 'downloadUrl and filename required' });
+    const { downloadUrl, folder } = req.body;
+    let filename;
+    try {
+        filename = safeFilename(req.body.filename, 'filename');
+        if (!/\.jar$/i.test(filename)) {
+            return res.status(400).json({ error: 'filename must end with .jar' });
+        }
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
+    if (!downloadUrl) return res.status(400).json({ error: 'downloadUrl required' });
 
     // SSRF protection: only allow downloads from trusted CDN origins
     const allowedOrigins = [
@@ -61,11 +71,11 @@ router.post('/:id/plugins/install-remote', requirePermission('plugin.install'), 
     }
 
     const targetFolder = folder === 'mods' ? 'mods' : 'plugins';
-    const dir = path.join(serverDir, targetFolder);
+    const dir = path.resolve(serverDir, targetFolder);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const destPath = path.join(dir, filename);
-    if (!destPath.startsWith(dir)) return res.status(403).json({ error: 'Invalid path' });
+    const destPath = path.resolve(dir, filename);
+    if (!pathInside(dir, destPath)) return res.status(403).json({ error: 'Invalid path' });
 
     try {
         await downloadPlugin(downloadUrl, destPath);
@@ -131,13 +141,21 @@ router.post('/:id/plugins/toggle', requirePermission('plugin.toggle'), (req, res
     const serverDir = getServerDir(req);
     if (!serverDir) return res.status(404).json({ error: 'Server not found' });
 
-    const { filename, folder } = req.body;
-    if (!filename || !folder) return res.status(400).json({ error: 'filename and folder required' });
+    const { folder } = req.body;
+    if (folder !== 'plugins' && folder !== 'mods') {
+        return res.status(400).json({ error: 'folder must be "plugins" or "mods"' });
+    }
+    let filename;
+    try {
+        filename = safeFilename(req.body.filename, 'filename');
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
 
-    const dir = path.join(serverDir, folder);
-    const filePath = path.join(dir, filename);
+    const dir = path.resolve(serverDir, folder);
+    const filePath = path.resolve(dir, filename);
 
-    if (!filePath.startsWith(dir)) return res.status(403).json({ error: 'Invalid path' });
+    if (!pathInside(dir, filePath)) return res.status(403).json({ error: 'Invalid path' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
 
     let newName;
@@ -170,13 +188,21 @@ router.delete('/:id/plugins', requirePermission('plugin.delete'), (req, res) => 
     const serverDir = getServerDir(req);
     if (!serverDir) return res.status(404).json({ error: 'Server not found' });
 
-    const { filename, folder } = req.body;
-    if (!filename || !folder) return res.status(400).json({ error: 'filename and folder required' });
+    const { folder } = req.body;
+    if (folder !== 'plugins' && folder !== 'mods') {
+        return res.status(400).json({ error: 'folder must be "plugins" or "mods"' });
+    }
+    let filename;
+    try {
+        filename = safeFilename(req.body.filename, 'filename');
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
 
-    const dir = path.join(serverDir, folder);
-    const filePath = path.join(dir, filename);
+    const dir = path.resolve(serverDir, folder);
+    const filePath = path.resolve(dir, filename);
 
-    if (!filePath.startsWith(dir)) return res.status(403).json({ error: 'Invalid path' });
+    if (!pathInside(dir, filePath)) return res.status(403).json({ error: 'Invalid path' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
 
     fs.unlinkSync(filePath);
@@ -200,7 +226,7 @@ router.post('/:id/plugins/upload', requirePermission('plugin.install'), (req, re
 
     // Determine target folder from query
     const folder = req.query.folder === 'mods' ? 'mods' : 'plugins';
-    const dir = path.join(serverDir, folder);
+    const dir = path.resolve(serverDir, folder);
 
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -208,14 +234,23 @@ router.post('/:id/plugins/upload', requirePermission('plugin.install'), (req, re
 
     const storage = multer.diskStorage({
         destination: (r, file, cb) => cb(null, dir),
-        filename: (r, file, cb) => cb(null, file.originalname)
+        filename: (r, file, cb) => {
+            try {
+                // Sanitize: strip any directory components and validate
+                const safe = safeFilename(path.basename(file.originalname), 'filename');
+                cb(null, safe);
+            } catch (e) {
+                cb(e);
+            }
+        }
     });
 
     const upload = multer({
         storage,
         limits: { fileSize: 200 * 1024 * 1024 },
         fileFilter: (r, file, cb) => {
-            if (path.extname(file.originalname).toLowerCase() === '.jar') {
+            const base = path.basename(file.originalname || '');
+            if (path.extname(base).toLowerCase() === '.jar') {
                 cb(null, true);
             } else {
                 cb(new Error('Only .jar files allowed'));

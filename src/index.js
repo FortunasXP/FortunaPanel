@@ -39,6 +39,25 @@ if (!config.jwtSecret) {
     throw new Error('JWT_SECRET must be set in production');
 }
 
+// Honor X-Forwarded-* headers when behind a reverse proxy so `req.ip` is
+// the real client and per-IP rate limit buckets aren't shared across all
+// users. Configured via TRUST_PROXY env var:
+//   - unset  → "loopback" (safe default for local dev)
+//   - "true" → trust the immediately-upstream proxy only (most common)
+//   - any value Express accepts (e.g. "10.0.0.0/8", "1") otherwise
+{
+    const tp = config.trustProxy;
+    if (tp === undefined || tp === '' || tp === null) {
+        app.set('trust proxy', 'loopback');
+    } else if (tp === 'true' || tp === true) {
+        app.set('trust proxy', 1);
+    } else if (tp === 'false' || tp === false) {
+        app.set('trust proxy', false);
+    } else {
+        app.set('trust proxy', tp);
+    }
+}
+
 // Middleware
 app.use((req, res, next) => {
     req.requestId = crypto.randomUUID();
@@ -263,7 +282,7 @@ async function start() {
     await dnsManager.loadProviders();
 
     // Setup WebSocket & System Monitor
-    setupWebSocket(server, serverManager, systemMonitor, resourceLimiter, networkManager, healthMonitor, permissionManager, jobManager);
+    setupWebSocket(server, serverManager, systemMonitor, resourceLimiter, networkManager, healthMonitor, permissionManager, jobManager, app);
     systemMonitor.start(serverManager);
 
     // Wire activity logging to server events

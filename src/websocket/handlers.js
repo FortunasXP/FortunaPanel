@@ -2,7 +2,31 @@ const logger = require('../utils/logger');
 
 let statsInterval = null;
 
-function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobManager) {
+/**
+ * Send a server-scoped event only to clients that have `server.console`
+ * permission for that specific server. Falls back to `broadcast` (the
+ * per-subscription filter) when no permissionManager is wired — but
+ * NEVER falls back to broadcastAll, which would let a viewer enumerate
+ * all servers' status/crashes/players regardless of their permissions.
+ */
+function broadcastByServerPermission(wss, serverId, permission, data, permissionManager) {
+    const message = JSON.stringify(data);
+    wss.clients.forEach(client => {
+        if (client.readyState !== 1) return;
+        const username = client.user?.username;
+        if (!username) return;
+        if (permissionManager) {
+            if (!permissionManager.hasPermission(username, serverId, permission)) return;
+        } else {
+            // No permission system available — fail closed: require an
+            // explicit per-server subscription to receive the event.
+            if (!client.subscriptions?.has(serverId)) return;
+        }
+        client.send(message);
+    });
+}
+
+function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobManager, permissionManager) {
     // Broadcast console output to subscribed clients
     serverManager.on('console', (data) => {
         broadcast(wss, data.serverId, {
@@ -14,7 +38,9 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
         });
     });
 
-    // Broadcast status changes
+    // Broadcast status changes — per-server events go only to clients
+    // with `server.console` permission for that server, not every
+    // connected client.
     serverManager.on('status', (data) => {
         broadcast(wss, data.serverId, {
             type: 'status',
@@ -23,21 +49,27 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
             previousStatus: data.previousStatus
         });
 
-        // Also broadcast to all clients (for dashboard updates)
-        broadcastAll(wss, {
+        broadcastByServerPermission(wss, data.serverId, 'server.console', {
             type: 'server-status',
             serverId: data.serverId,
             status: data.status
-        });
+        }, permissionManager);
     });
 
-    // Broadcast player events
+    // Broadcast player events to subscribed clients (server detail page)
     serverManager.on('player-join', (data) => {
         broadcast(wss, data.serverId, {
             type: 'player-join',
             serverId: data.serverId,
             player: data.player
         });
+        broadcastByServerPermission(wss, data.serverId, 'server.console', {
+            type: 'player-update',
+            serverId: data.serverId,
+            action: 'join',
+            player: data.player,
+            online: data.playerCount
+        }, permissionManager);
     });
 
     serverManager.on('player-leave', (data) => {
@@ -46,6 +78,13 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
             serverId: data.serverId,
             player: data.player
         });
+        broadcastByServerPermission(wss, data.serverId, 'server.console', {
+            type: 'player-update',
+            serverId: data.serverId,
+            action: 'leave',
+            player: data.player,
+            online: data.playerCount
+        }, permissionManager);
     });
 
     // Broadcast server errors
@@ -57,25 +96,25 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
         });
     });
 
-    // Broadcast crash events
+    // Broadcast crash events — per-server, permission-gated
     serverManager.on('crash', (data) => {
-        broadcastAll(wss, {
+        broadcastByServerPermission(wss, data.serverId, 'server.console', {
             type: 'server-crash',
             serverId: data.serverId,
             exitCode: data.exitCode,
             crashCount: data.crashCount,
             willRestart: data.willRestart,
             nextRestartIn: data.nextRestartIn
-        });
+        }, permissionManager);
     });
 
     serverManager.on('max-crashes', (data) => {
-        broadcastAll(wss, {
+        broadcastByServerPermission(wss, data.serverId, 'server.console', {
             type: 'server-max-crashes',
             serverId: data.serverId,
             crashCount: data.crashCount,
             maxAutoRestarts: data.maxAutoRestarts
-        });
+        }, permissionManager);
     });
 
     // Broadcast network events to all clients
@@ -134,12 +173,16 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
         });
     }
 
-    // Periodic stats broadcast (every 5 seconds)
+    // Periodic stats broadcast (every 5 seconds). Filter the stats map
+    // PER CLIENT so a viewer only sees the servers they have permission
+    // to read — previously every subscribed client saw every server's
+    // status/players/uptime.
     if (statsInterval) clearInterval(statsInterval);
     statsInterval = setInterval(() => {
-        const stats = {};
-        for (const server of serverManager.getAllServers()) {
-            stats[server.id] = {
+        const fullStats = {};
+        const allServers = serverManager.getAllServers();
+        for (const server of allServers) {
+            fullStats[server.id] = {
                 status: server.status,
                 players: server.players,
                 uptime: server.uptime
@@ -147,9 +190,20 @@ function setupHandlers(wss, serverManager, networkManager, healthMonitor, jobMan
         }
 
         wss.clients.forEach(client => {
-            if (client.readyState === 1 && client.wantsStats) {
-                client.send(JSON.stringify({ type: 'stats', servers: stats }));
+            if (client.readyState !== 1 || !client.wantsStats) return;
+            const username = client.user?.username;
+            if (!username) return;
+
+            let visible = fullStats;
+            if (permissionManager) {
+                visible = {};
+                for (const server of allServers) {
+                    if (permissionManager.hasPermission(username, server.id, 'server.console')) {
+                        visible[server.id] = fullStats[server.id];
+                    }
+                }
             }
+            client.send(JSON.stringify({ type: 'stats', servers: visible }));
         });
     }, 5000);
 }

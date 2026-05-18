@@ -134,16 +134,33 @@ class JarManager {
     }
 
     async uploadCustomJar(filename, buffer) {
-        const customDir = path.join(config.jarsCache, 'custom');
+        // Strip any directory components and reject traversal attempts so a
+        // caller passing originalname="../../servers/victim/server.jar"
+        // cannot overwrite arbitrary files.
+        const base = path.basename(filename || '');
+        if (!base || base === '.' || base === '..' || base !== filename) {
+            throw new Error('Invalid filename');
+        }
+        if (!/^[A-Za-z0-9._-]+\.jar$/i.test(base)) {
+            throw new Error('Filename must be a plain .jar name (letters, numbers, dot/dash/underscore)');
+        }
+
+        const customDir = path.resolve(path.join(config.jarsCache, 'custom'));
         if (!fs.existsSync(customDir)) {
             fs.mkdirSync(customDir, { recursive: true });
         }
 
-        const destPath = path.join(customDir, filename);
-        fs.writeFileSync(destPath, buffer);
-        logger.info(`Custom JAR uploaded: ${filename}`);
+        const destPath = path.resolve(customDir, base);
+        const sep = path.sep;
+        const withSep = customDir.endsWith(sep) ? customDir : customDir + sep;
+        if (destPath !== customDir && !destPath.startsWith(withSep)) {
+            throw new Error('Invalid path');
+        }
 
-        return { path: destPath, filename };
+        fs.writeFileSync(destPath, buffer);
+        logger.info(`Custom JAR uploaded: ${base}`);
+
+        return { path: destPath, filename: base };
     }
 
     /**

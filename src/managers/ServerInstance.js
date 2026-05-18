@@ -192,6 +192,12 @@ class ServerInstance extends EventEmitter {
     }
 
     kill() {
+        // Cancel any pending auto-restart so calling kill() doesn't race
+        // against a crash-handler scheduled restart.
+        if (this._autoRestartTimer) {
+            clearTimeout(this._autoRestartTimer);
+            this._autoRestartTimer = null;
+        }
         if (this.config.docker?.enabled && this._dockerManager) {
             this._dockerManager.killContainer(this.id);
         } else if (this.pid) {
@@ -303,14 +309,14 @@ class ServerInstance extends EventEmitter {
         const joinMatch = text.match(PATTERNS.playerJoin);
         if (joinMatch) {
             this.players.add(joinMatch[1]);
-            this.emit('player-join', { serverId: this.id, player: joinMatch[1] });
+            this.emit('player-join', { serverId: this.id, player: joinMatch[1], playerCount: this.players.size });
         }
 
         // Player leave
         const leaveMatch = text.match(PATTERNS.playerLeave);
         if (leaveMatch) {
             this.players.delete(leaveMatch[1]);
-            this.emit('player-leave', { serverId: this.id, player: leaveMatch[1] });
+            this.emit('player-leave', { serverId: this.id, player: leaveMatch[1], playerCount: this.players.size });
         }
 
         // Player list response
@@ -350,7 +356,7 @@ class ServerInstance extends EventEmitter {
         const joinMatch = text.match(joinPattern);
         if (joinMatch) {
             this.players.add(joinMatch[1]);
-            this.emit('player-join', { serverId: this.id, player: joinMatch[1] });
+            this.emit('player-join', { serverId: this.id, player: joinMatch[1], playerCount: this.players.size });
         }
 
         // Player leave
@@ -358,7 +364,7 @@ class ServerInstance extends EventEmitter {
         const leaveMatch = text.match(leavePattern);
         if (leaveMatch) {
             this.players.delete(leaveMatch[1]);
-            this.emit('player-leave', { serverId: this.id, player: leaveMatch[1] });
+            this.emit('player-leave', { serverId: this.id, player: leaveMatch[1], playerCount: this.players.size });
         }
     }
 
@@ -398,12 +404,17 @@ class ServerInstance extends EventEmitter {
             }
         }, cooldown);
 
-        // Auto-restart with exponential backoff
+        // Auto-restart with exponential backoff. Use the SAME dockerManager
+        // we were started with; the previous code called `this.start()`
+        // with no arg, so Docker-mode servers silently fell back to bare
+        // spawn on auto-restart.
         if (willRestart) {
             logger.info(`Server ${this.name}: auto-restarting in ${delay / 1000}s (attempt ${this.crashCount}/${maxAutoRestarts})`);
-            setTimeout(() => {
+            clearTimeout(this._autoRestartTimer);
+            this._autoRestartTimer = setTimeout(() => {
+                this._autoRestartTimer = null;
                 if (!this.process) {
-                    this.start();
+                    this.start(this._dockerManager || null);
                 }
             }, delay);
         } else if (this.config.autoRestart && this.crashCount > maxAutoRestarts) {

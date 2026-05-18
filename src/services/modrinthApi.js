@@ -112,20 +112,58 @@ async function getProjectVersions(projectId, gameVersion, loaders) {
     }));
 }
 
+// Allowed origins for plugin downloads. Re-validated on every redirect to
+// prevent SSRF via a trusted CDN that 30x's to an internal/metadata IP.
+const ALLOWED_DOWNLOAD_ORIGINS = [
+    'https://cdn.modrinth.com/',
+    'https://mediafilez.forgecdn.net/'
+];
+
+function isAllowedDownloadUrl(url) {
+    if (typeof url !== 'string') return false;
+    return ALLOWED_DOWNLOAD_ORIGINS.some(o => url.startsWith(o));
+}
+
 function downloadPlugin(url, destPath) {
     return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(destPath);
+        let redirectCount = 0;
+        const MAX_REDIRECTS = 5;
+
+        const cleanupAndReject = (err) => {
+            try { file.close(); } catch (_) {}
+            try { fs.unlinkSync(destPath); } catch (_) {}
+            reject(err);
+        };
+
         const doDownload = (downloadUrl) => {
+            if (!isAllowedDownloadUrl(downloadUrl)) {
+                cleanupAndReject(new Error('Refusing to download from non-allowlisted origin'));
+                return;
+            }
+
             https.get(downloadUrl, { headers: { 'User-Agent': USER_AGENT } }, (res) => {
-                // Follow redirects
-                if (res.statusCode === 301 || res.statusCode === 302) {
-                    doDownload(res.headers.location);
+                // Follow redirects, but re-validate against the allowlist
+                if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+                    if (++redirectCount > MAX_REDIRECTS) {
+                        cleanupAndReject(new Error('Too many redirects'));
+                        return;
+                    }
+                    const next = res.headers.location;
+                    if (!next) {
+                        cleanupAndReject(new Error('Redirect with no Location header'));
+                        return;
+                    }
+                    // Resolve relative redirects against the current URL
+                    let absolute;
+                    try { absolute = new URL(next, downloadUrl).toString(); }
+                    catch (_) { cleanupAndReject(new Error('Invalid redirect target')); return; }
+                    res.resume(); // drain
+                    doDownload(absolute);
                     return;
                 }
                 if (res.statusCode !== 200) {
-                    file.close();
-                    fs.unlinkSync(destPath);
-                    reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+                    cleanupAndReject(new Error(`Download failed: HTTP ${res.statusCode}`));
                     return;
                 }
                 res.pipe(file);
@@ -133,11 +171,7 @@ function downloadPlugin(url, destPath) {
                     file.close();
                     resolve(destPath);
                 });
-            }).on('error', (err) => {
-                file.close();
-                try { fs.unlinkSync(destPath); } catch (e) {}
-                reject(err);
-            });
+            }).on('error', cleanupAndReject);
         };
         doDownload(url);
     });

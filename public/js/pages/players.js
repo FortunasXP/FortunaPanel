@@ -1,6 +1,6 @@
 // FortunaPanel - Player Management Page
 import { api } from '../api.js';
-import { showToast, escapeHtml } from '../app.js';
+import { showToast, showModal, escapeHtml } from '../app.js';
 
 let activeSubTab = 'online';
 let serverId = null;
@@ -40,7 +40,7 @@ export async function render(container, params) {
 function renderPage(container) {
     container.innerHTML = `
         <div class="mb-6">
-            <h1 class="text-2xl font-semibold tracking-tight text-foreground">Player Management</h1>
+            <h1 class="page-title">Player Management</h1>
             <p class="mt-0.5 text-xs text-muted-foreground">${playerData.count} of ${playerData.max} slots used</p>
         </div>
         <div class="tabs mb-6">
@@ -87,7 +87,7 @@ function renderOnlineTab(content, container) {
                     ${playerData.online.map(p => `
                         <div class="player-item">
                             <div class="player-info">
-                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/32" alt="${escapeHtml(p)}" loading="lazy">
+                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/32" alt="" loading="lazy">
                                 <span class="player-name">${escapeHtml(p)}</span>
                             </div>
                             <div class="player-actions">
@@ -102,22 +102,40 @@ function renderOnlineTab(content, container) {
     `;
 
     content.querySelectorAll('[data-kick]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            try {
-                await api.post(`/servers/${serverId}/players/kick`, { player: btn.dataset.kick });
-                showToast(`Kicked ${btn.dataset.kick}`, 'success');
-                setTimeout(() => render(container, { id: serverId }), 1000);
-            } catch (e) { showToast(e.message, 'error'); }
+        btn.addEventListener('click', () => {
+            const player = btn.dataset.kick;
+            showModal('Kick Player', `
+                <p>Kick <strong>${escapeHtml(player)}</strong> from the server?</p>
+                <p class="text-xs text-muted-foreground mt-1.5">They will be disconnected and can rejoin freely.</p>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'kick', label: 'Kick', class: 'btn-danger', onClick: async () => {
+                    try {
+                        await api.post(`/servers/${encodeURIComponent(serverId)}/players/kick`, { player });
+                        showToast(`Kicked ${player}`, 'success');
+                        setTimeout(() => render(container, { id: serverId }), 1000);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
         });
     });
 
     content.querySelectorAll('[data-ban]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            try {
-                await api.post(`/servers/${serverId}/players/ban`, { player: btn.dataset.ban });
-                showToast(`Banned ${btn.dataset.ban}`, 'success');
-                setTimeout(() => render(container, { id: serverId }), 1000);
-            } catch (e) { showToast(e.message, 'error'); }
+        btn.addEventListener('click', () => {
+            const player = btn.dataset.ban;
+            showModal('Ban Player', `
+                <p>Ban <strong>${escapeHtml(player)}</strong>?</p>
+                <p class="text-xs text-muted-foreground mt-1.5">They will be disconnected and not allowed to rejoin until unbanned.</p>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'ban', label: 'Ban', class: 'btn-danger', onClick: async () => {
+                    try {
+                        await api.post(`/servers/${encodeURIComponent(serverId)}/players/ban`, { player });
+                        showToast(`Banned ${player}`, 'success');
+                        setTimeout(() => render(container, { id: serverId }), 1000);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
         });
     });
 }
@@ -141,7 +159,7 @@ function renderWhitelistTab(content, container) {
                     ${whitelist.map(w => `
                         <div class="player-item">
                             <div class="player-info">
-                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(w.name)}/32" alt="${escapeHtml(w.name)}" loading="lazy">
+                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(w.name)}/32" alt="" loading="lazy">
                                 <span class="player-name">${escapeHtml(w.name)}</span>
                             </div>
                             <button class="btn btn-sm btn-secondary" data-wl-remove="${escapeHtml(w.name)}">Remove</button>
@@ -199,7 +217,7 @@ function renderBannedTab(content, container) {
                     ${bans.map(b => `
                         <div class="player-item" data-search-name="${escapeHtml((b.name || '').toLowerCase())}">
                             <div class="player-info min-w-0 flex-1">
-                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(b.name || '')}/32" alt="${escapeHtml(b.name || '')}" loading="lazy">
+                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(b.name || '')}/32" alt="" loading="lazy">
                                 <div class="min-w-0">
                                     <div class="player-name">${escapeHtml(b.name || 'Unknown')}</div>
                                     <div class="mt-0.5 text-[11px] text-muted-foreground">
@@ -319,7 +337,7 @@ function renderOpsTab(content, container) {
                     ${ops.map(o => `
                         <div class="player-item">
                             <div class="player-info">
-                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(o.name)}/32" alt="${escapeHtml(o.name)}" loading="lazy">
+                                <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(o.name)}/32" alt="" loading="lazy">
                                 <div>
                                     <span class="player-name">${escapeHtml(o.name)}</span>
                                     <span class="ml-2 text-[11px] text-muted-foreground">Level ${escapeHtml(o.level || 4)}</span>

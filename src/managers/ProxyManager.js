@@ -47,12 +47,41 @@ class ProxyManager extends EventEmitter {
     }
 
     /**
+     * Validate a port number is within valid range.
+     */
+    _validatePort(port, label) {
+        const p = parseInt(port);
+        if (!p || p < 1 || p > 65535) {
+            throw new Error(`${label} must be a valid port (1-65535)`);
+        }
+        return p;
+    }
+
+    /**
+     * Validate target host to prevent SSRF to sensitive internal endpoints.
+     */
+    _validateTargetHost(host) {
+        if (!host) return '127.0.0.1';
+        // Block metadata service IPs and link-local
+        const blocked = ['169.254.169.254', '100.100.100.200', '0.0.0.0'];
+        if (blocked.includes(host)) {
+            throw new Error('Target host is not allowed');
+        }
+        // Basic hostname/IP validation
+        if (!/^[a-zA-Z0-9.\-:]+$/.test(host)) {
+            throw new Error('Invalid target host format');
+        }
+        return host;
+    }
+
+    /**
      * Add a new proxy route.
      */
     addRoute({ name, listenPort, targetHost, targetPort, serverId, enabled = true }) {
-        if (!listenPort || !targetPort) {
-            throw new Error('listenPort and targetPort are required');
-        }
+        listenPort = this._validatePort(listenPort, 'Listen port');
+        targetPort = this._validatePort(targetPort, 'Target port');
+        targetHost = this._validateTargetHost(targetHost);
+
         if (this._routes.some(r => r.listenPort === listenPort)) {
             throw new Error(`Port ${listenPort} is already in use by another route`);
         }
@@ -167,24 +196,29 @@ class ProxyManager extends EventEmitter {
             connections.add(clientSocket);
             route.totalConnections = (route.totalConnections || 0) + 1;
 
-            const targetSocket = net.createConnection({
-                host: route.targetHost,
-                port: route.targetPort
-            });
-
-            // Pipe data bidirectionally
-            clientSocket.pipe(targetSocket);
-            targetSocket.pipe(clientSocket);
-
+            let cleaned = false;
             const cleanup = () => {
+                if (cleaned) return;
+                cleaned = true;
                 connections.delete(clientSocket);
                 clientSocket.destroy();
                 targetSocket.destroy();
             };
 
+            const targetSocket = net.createConnection({
+                host: route.targetHost,
+                port: route.targetPort
+            });
+
+            // Attach error handler immediately to prevent unhandled error crash
+            targetSocket.on('error', cleanup);
+
+            // Pipe data bidirectionally
+            clientSocket.pipe(targetSocket);
+            targetSocket.pipe(clientSocket);
+
             clientSocket.on('error', cleanup);
             clientSocket.on('close', cleanup);
-            targetSocket.on('error', cleanup);
             targetSocket.on('close', cleanup);
         });
 

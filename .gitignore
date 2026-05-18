@@ -9,6 +9,9 @@ data/jars/
 data/stats/
 data/console-logs/
 data/backups/
+data/snapshots/
+data/ssl/
+data/.jwt-secret
 servers/
 logs/
 *.log

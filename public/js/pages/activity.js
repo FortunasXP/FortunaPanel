@@ -101,7 +101,7 @@ export async function render(container) {
         <section class="space-y-6">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
-                    <h1 class="text-2xl font-semibold tracking-tight text-foreground">Activity Log</h1>
+                    <h1 class="page-title">Activity Log</h1>
                     <p class="mt-1 text-sm text-muted-foreground">Track all panel events and actions</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -173,7 +173,7 @@ async function loadEntries(container, append) {
             list.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.75">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" class="text-muted-foreground">
                             <polyline points="12 8 12 12 14 14"/>
                             <circle cx="12" cy="12" r="10"/>
                         </svg>
@@ -190,7 +190,7 @@ async function loadEntries(container, append) {
             const hasDiff = entry.diff && entry.diff.before && Object.keys(entry.diff.before).length > 0;
             return `
                 <div class="activity-entry border-b border-border">
-                    <div class="flex items-start gap-3.5 py-3 ${hasDiff ? 'cursor-pointer' : ''}" ${hasDiff ? `data-toggle-diff="${entry.id}"` : ''}>
+                    <div class="flex items-start gap-3.5 py-3 ${hasDiff ? 'cursor-pointer' : ''}" ${hasDiff ? `data-toggle-diff="${escapeHtml(String(entry.id))}"` : ''}>
                         <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-card text-sm ${display.class}">${display.icon}</div>
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2">
@@ -203,7 +203,7 @@ async function loadEntries(container, append) {
                         <div class="flex-shrink-0 text-[11px] text-muted-foreground">${escapeHtml(entry.user || '')}</div>
                     </div>
                     ${hasDiff ? `
-                        <div class="hidden pb-3 pl-11" id="diff-${entry.id}">
+                        <div class="hidden pb-3 pl-11" id="diff-${escapeHtml(String(entry.id))}">
                             <div class="rounded-lg border border-border bg-card p-3 font-mono text-xs">
                                 ${Object.keys(entry.diff.before).map(key => `
                                     <div class="mb-1">
@@ -226,10 +226,12 @@ async function loadEntries(container, append) {
             list.innerHTML = html;
         }
 
-        // Wire diff toggles
+        // Wire diff toggles. Use CSS.escape on the id segment so an entry
+        // id containing CSS selector metacharacters can't break the
+        // selector (or worse, target an unintended element).
         list.querySelectorAll('[data-toggle-diff]').forEach(el => {
             el.addEventListener('click', () => {
-                const diffEl = list.querySelector(`#diff-${el.dataset.toggleDiff}`);
+                const diffEl = list.querySelector(`#diff-${CSS.escape(el.dataset.toggleDiff)}`);
                 if (diffEl) {
                     diffEl.classList.toggle('hidden');
                 }

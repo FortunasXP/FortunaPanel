@@ -163,7 +163,7 @@ function rerender() {
         <section class="space-y-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold tracking-tight">Jobs</h1>
+                    <h1 class="page-title">Jobs</h1>
                     <p class="mt-1 text-sm text-muted-foreground">Track async operations and storage migrations</p>
                 </div>
                 <button class="btn btn-secondary btn-sm" id="refreshJobs">Refresh</button>

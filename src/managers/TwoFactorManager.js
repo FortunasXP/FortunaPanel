@@ -115,6 +115,19 @@ class TwoFactorManager {
         const pendingSecret = user.twoFactor?.pendingSecret;
         if (!pendingSecret) throw new Error('No pending 2FA setup. Generate a secret first.');
 
+        // Apply the same lockout/throttle policy as verifyCode so an
+        // attacker can't brute-force the 6-digit code space during the
+        // setup window.
+        const throttle = this._checkThrottle(username);
+        if (throttle.locked) {
+            throw new Error(`Too many failed attempts. Try again in ${throttle.retryAfter}s`);
+        }
+
+        if (typeof code !== 'string' || !code) {
+            this._recordFailure(username);
+            throw new Error('Invalid verification code');
+        }
+
         const totp = new TOTP({
             issuer: 'FortunaPanel',
             label: username,
@@ -126,8 +139,10 @@ class TwoFactorManager {
 
         const delta = totp.validate({ token: code, window: 1 });
         if (delta === null) {
+            this._recordFailure(username);
             throw new Error('Invalid verification code');
         }
+        this._clearFailures(username);
 
         // Generate backup codes
         const backupCodes = Array.from({ length: 8 }, () =>

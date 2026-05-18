@@ -4,9 +4,13 @@ const jwt = require('jsonwebtoken');
 const config = require('../config/default');
 const logger = require('../utils/logger');
 const { authMiddleware, requireGlobalPermission } = require('../middleware/auth');
+const { asyncRoute } = require('../utils/http');
 const { requireString } = require('../utils/validation');
 const UserStore = require('../managers/UserStore');
 const RevokedTokenStore = require('../managers/RevokedTokenStore');
+
+// Username format: alphanumeric, underscores, hyphens (prevents stored XSS)
+const USERNAME_REGEX = /^[a-zA-Z0-9_\-]+$/;
 
 const router = express.Router();
 
@@ -97,7 +101,7 @@ const loginEvictTimer = setInterval(evictExpiredLoginBuckets, Math.max(LOGIN_WIN
 if (loginEvictTimer.unref) loginEvictTimer.unref();
 
 // POST /api/auth/setup - First time admin account creation
-router.post('/setup', async (req, res) => {
+router.post('/setup', asyncRoute(async (req, res) => {
     if (getUserStore(req).isSetup()) {
         return res.status(400).json({ error: 'Admin account already exists' });
     }
@@ -111,16 +115,20 @@ router.post('/setup', async (req, res) => {
         return res.status(400).json({ error: e.message });
     }
 
+    if (!USERNAME_REGEX.test(username)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers, underscores, and hyphens' });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     getUserStore(req).createInitialAdmin(username, passwordHash);
     logger.info(`Admin account created: ${username}`);
 
     const token = signToken({ username, role: 'admin' });
     res.json({ token, username, role: 'admin' });
-});
+}));
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', asyncRoute(async (req, res) => {
     const attemptedUser = req.body?.username || 'unknown';
     const bucket = getLoginBucket(req, attemptedUser);
     const limitState = checkLoginRateLimit(bucket);
@@ -183,7 +191,7 @@ router.post('/login', async (req, res) => {
     }
 
     res.json({ token, username, role });
-});
+}));
 
 // POST /api/auth/logout — revoke the current token's jti so it can't be
 // reused until its natural expiry. Safe to call without a valid token
@@ -243,7 +251,7 @@ router.get('/verify', (req, res) => {
 });
 
 // POST /api/auth/change-password
-router.post('/change-password', authMiddleware, async (req, res) => {
+router.post('/change-password', authMiddleware, asyncRoute(async (req, res) => {
     const admin = getUserStore(req).getAdmin();
     if (!admin) {
         return res.status(500).json({ error: 'Admin account not found' });
@@ -266,7 +274,7 @@ router.post('/change-password', authMiddleware, async (req, res) => {
     getUserStore(req).updatePassword(admin.username, await bcrypt.hash(newPassword, 10));
     logger.info('Admin password changed');
     res.json({ success: true });
-});
+}));
 
 // GET /api/auth/users - List all users (admin only)
 router.get('/users', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
@@ -300,6 +308,10 @@ router.post('/users', authMiddleware, requireGlobalPermission('panel.users'), as
         password = requireString(req.body.password, 'password', { min: 6, max: 256, trim: false });
     } catch (e) {
         return res.status(400).json({ error: e.message });
+    }
+
+    if (!USERNAME_REGEX.test(username)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers, underscores, and hyphens' });
     }
 
     const validRoles = ['admin', 'operator', 'viewer'];
@@ -361,7 +373,7 @@ router.post('/users/:username/reset-password', authMiddleware, requireGlobalPerm
 });
 
 // POST /api/auth/reset-password - Redeem a reset token and set new password (no auth required)
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', asyncRoute(async (req, res) => {
     const inviteManager = req.app.locals.inviteManager;
     if (!inviteManager) return res.status(503).json({ error: 'Not available' });
 
@@ -371,17 +383,19 @@ router.post('/reset-password', async (req, res) => {
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const token = inviteManager.redeemResetToken(code);
+    // Atomically claim the reset token. Read-only redeemResetToken would
+    // let two simultaneous requests both pass and reset the password
+    // twice (the second with whatever password it sent).
+    const token = inviteManager.claimResetToken(code);
     if (!token) return res.status(400).json({ error: 'Invalid or expired reset code' });
 
     const user = getUserStore(req).getUser(token.username);
     if (!user) return res.status(400).json({ error: 'User no longer exists' });
 
     getUserStore(req).updatePassword(token.username, await bcrypt.hash(newPassword, 10));
-    inviteManager.markResetUsed(code);
     logger.info(`Password reset completed for ${token.username}`);
     res.json({ success: true, username: token.username });
-});
+}));
 
 // POST /api/auth/invites - Create an invite link (admin only)
 router.post('/invites', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {
@@ -431,7 +445,7 @@ router.get('/invite/:code', (req, res) => {
 });
 
 // POST /api/auth/invite/redeem - Redeem an invite and create account (no auth required)
-router.post('/invite/redeem', async (req, res) => {
+router.post('/invite/redeem', asyncRoute(async (req, res) => {
     const inviteManager = req.app.locals.inviteManager;
     if (!inviteManager) return res.status(503).json({ error: 'Not available' });
 
@@ -448,22 +462,47 @@ router.post('/invite/redeem', async (req, res) => {
         return res.status(400).json({ error: e.message });
     }
 
-    const invite = inviteManager.redeemInvite(code);
-    if (!invite) return res.status(400).json({ error: 'Invalid or expired invite' });
+    // Validate username format (alphanumeric, underscores, hyphens only)
+    if (!USERNAME_REGEX.test(safeUsername)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers, underscores, and hyphens' });
+    }
 
+    // Username availability is checked FIRST so we don't waste the invite
+    // on a collision. The atomic claim then prevents two concurrent
+    // redemptions of the same code (the read-mutate-save is synchronous).
     if (getUserStore(req).getUser(safeUsername)) {
         return res.status(400).json({ error: 'Username already taken' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const invite = inviteManager.claimInvite(code, safeUsername);
+    if (!invite) return res.status(400).json({ error: 'Invalid or expired invite' });
+
+    let passwordHash;
+    try {
+        passwordHash = await bcrypt.hash(password, 10);
+    } catch (e) {
+        // bcrypt failed AFTER we claimed the invite. Restore it so the
+        // user can retry. (Best-effort; if the file write fails the
+        // invite stays burned — better than silent re-use.)
+        try {
+            const t = inviteManager._data.tokens.find(x => x.code === code && x.type === 'invite');
+            if (t) { t.used = false; delete t.usedBy; delete t.usedAt; inviteManager._save(); }
+        } catch (_) {}
+        throw e;
+    }
+
+    // Final race window: someone could have created the user between our
+    // pre-check and now. Guard with another check.
+    if (getUserStore(req).getUser(safeUsername)) {
+        return res.status(400).json({ error: 'Username already taken' });
+    }
     getUserStore(req).createUser(safeUsername, passwordHash, invite.role);
-    inviteManager.markInviteUsed(code, safeUsername);
 
     logger.info(`User ${safeUsername} created via invite (role: ${invite.role})`);
 
     const token = signToken({ username: safeUsername, role: invite.role });
     res.json({ token, username: safeUsername, role: invite.role });
-});
+}));
 
 // PUT /api/auth/users/:username/role - Update user role (admin only)
 router.put('/users/:username/role', authMiddleware, requireGlobalPermission('panel.users'), (req, res) => {

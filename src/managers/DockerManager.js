@@ -8,18 +8,74 @@ const logger = require('../utils/logger');
 // Default Docker image for Minecraft servers
 const DEFAULT_IMAGE = 'eclipse-temurin:21-jre';
 
+// Image-name validator shared by pull and run. Rejects argument injection
+// (leading dash) and any character that is not part of a normal Docker tag.
+const IMAGE_RE = /^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]+$/;
+function isValidImage(image) {
+    return typeof image === 'string' && !image.startsWith('-') && IMAGE_RE.test(image);
+}
+
+// Env keys must look like environment variables. Values must not contain
+// control characters or newlines (which would split additional CLI args).
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function isValidEnvKey(k) { return typeof k === 'string' && ENV_KEY_RE.test(k); }
+function isValidEnvValue(v) {
+    if (typeof v !== 'string') return false;
+    return !/[\r\n\x00]/.test(v);
+}
+
+// Docker flags that grant host access we never want to expose. Match the
+// flag head only (the part before "=" / a space) so `--volume=/etc:/host`
+// and `--volume /etc:/host` are both caught.
+const BLOCKED_FLAG_HEADS = new Set([
+    '--privileged',
+    '--pid',
+    '--ipc',
+    '--uts',
+    '--userns',
+    '--cgroup-parent',
+    '--cap-add',
+    '--security-opt',
+    '--device',
+    '--device-cgroup-rule',
+    '--mount',
+    '--volume',
+    '-v',
+    '--network',
+    '--net',
+    '--user',
+    '-u',
+    '--gpus',
+    '--runtime',
+    '--restart',
+    '--add-host',
+    '--sysctl',
+    '--tmpfs'
+]);
+function flagHead(flag) {
+    if (typeof flag !== 'string') return '';
+    const eq = flag.indexOf('=');
+    const head = (eq >= 0 ? flag.slice(0, eq) : flag.split(/\s+/)[0]).toLowerCase();
+    return head;
+}
+
 class DockerManager extends EventEmitter {
     constructor(serverManager) {
         super();
         this.serverManager = serverManager;
         this._available = null; // null = not checked yet
+        this._availableCheckedAt = 0;
     }
 
     /**
      * Check if Docker is installed and accessible.
+     * Cached for 60 seconds to avoid repeated process spawns.
      */
     async checkAvailable() {
-        if (this._available !== null) return this._available;
+        const CACHE_TTL = 60000; // 60s
+        if (this._available !== null && (Date.now() - this._availableCheckedAt) < CACHE_TTL) {
+            return this._available;
+        }
         try {
             execFileSync('docker', ['version', '--format', '{{.Server.Version}}'], {
                 timeout: 5000,
@@ -30,6 +86,7 @@ class DockerManager extends EventEmitter {
         } catch (_) {
             this._available = false;
         }
+        this._availableCheckedAt = Date.now();
         return this._available;
     }
 
@@ -89,6 +146,11 @@ class DockerManager extends EventEmitter {
         const image = docker.image || DEFAULT_IMAGE;
         const port = cfg.port || 25565;
 
+        // Validate image up-front to prevent CLI-flag injection via image name.
+        if (!isValidImage(image)) {
+            throw new Error(`Invalid Docker image name: ${image}`);
+        }
+
         const args = [
             'run',
             '--rm',
@@ -120,16 +182,39 @@ class DockerManager extends EventEmitter {
             }
         }
 
-        // Environment variables
-        if (docker.env) {
+        // Environment variables — validate each pair to prevent argument
+        // injection via a value that contains a newline or shell-control
+        // characters, and to ensure the key looks like a real env name.
+        if (docker.env && typeof docker.env === 'object') {
             for (const [key, val] of Object.entries(docker.env)) {
+                if (!isValidEnvKey(key)) {
+                    logger.warn(`Blocked invalid Docker env key: ${key}`);
+                    continue;
+                }
+                if (!isValidEnvValue(val)) {
+                    logger.warn(`Blocked invalid Docker env value for ${key}`);
+                    continue;
+                }
                 args.push('-e', `${key}=${val}`);
             }
         }
 
-        // Custom Docker flags
+        // Custom Docker flags — strict blocklist on the *flag head* so
+        // `--volume=/etc:/host-etc`, `--mount`, `--user=root`, etc. can't
+        // be smuggled past the original startsWith match.
         if (docker.extraFlags && Array.isArray(docker.extraFlags)) {
-            args.push(...docker.extraFlags);
+            for (const flag of docker.extraFlags) {
+                if (typeof flag !== 'string') continue;
+                if (/[\r\n\x00]/.test(flag)) {
+                    logger.warn(`Blocked Docker flag with control chars`);
+                    continue;
+                }
+                if (BLOCKED_FLAG_HEADS.has(flagHead(flag))) {
+                    logger.warn(`Blocked dangerous Docker flag: ${flag}`);
+                    continue;
+                }
+                args.push(flag);
+            }
         }
 
         // Image + Java command
@@ -245,6 +330,10 @@ class DockerManager extends EventEmitter {
      * Pull a Docker image.
      */
     async pullImage(image) {
+        // Validate image name to prevent argument injection
+        if (!isValidImage(image)) {
+            throw new Error('Invalid Docker image name');
+        }
         return new Promise((resolve, reject) => {
             logger.info(`Pulling Docker image: ${image}`);
             execFile('docker', ['pull', image], {

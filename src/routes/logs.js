@@ -6,15 +6,23 @@ const path = require('path');
 const config = require('../config/default');
 const { authMiddleware, requirePermission } = require('../middleware/auth');
 const { asyncRoute } = require('../utils/http');
+const { safeUuid, safeFilename, pathInside } = require('../utils/validation');
 
 const router = express.Router();
 router.use(authMiddleware);
 
-const LOGS_DIR = path.join(config.dataDir, 'console-logs');
+const LOGS_DIR = path.resolve(path.join(config.dataDir, 'console-logs'));
+
+// Resolve the per-server log directory after validating the server id is a UUID.
+// Returns the absolute path (always inside LOGS_DIR) or throws via safeUuid.
+function getServerLogDir(serverId) {
+    const id = safeUuid(serverId, 'serverId');
+    return path.resolve(LOGS_DIR, id);
+}
 
 // GET /api/servers/:id/logs - List log files
 router.get('/:id/logs', requirePermission('server.command'), asyncRoute(async (req, res) => {
-    const serverLogDir = path.join(LOGS_DIR, req.params.id);
+    const serverLogDir = getServerLogDir(req.params.id);
 
     let fileNames;
     try {
@@ -50,7 +58,7 @@ router.get('/:id/logs-search', requirePermission('server.command'), asyncRoute(a
         return res.status(400).json({ error: 'Search query must be at least 2 characters' });
     }
 
-    const serverLogDir = path.join(LOGS_DIR, req.params.id);
+    const serverLogDir = getServerLogDir(req.params.id);
 
     let fileNames;
     try {
@@ -86,16 +94,19 @@ router.get('/:id/logs-search', requirePermission('server.command'), asyncRoute(a
 
 // GET /api/servers/:id/logs/:filename - Download a specific log file
 router.get('/:id/logs/:filename', requirePermission('server.command'), asyncRoute(async (req, res) => {
-    const { filename } = req.params;
-
-    // Prevent path traversal
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-        return res.status(400).json({ error: 'Invalid filename' });
+    let serverLogDir, filename;
+    try {
+        serverLogDir = getServerLogDir(req.params.id);
+        filename = safeFilename(req.params.filename, 'filename');
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
+    if (!/\.log$/i.test(filename)) {
+        return res.status(400).json({ error: 'Only .log files can be downloaded' });
     }
 
-    const filePath = path.join(LOGS_DIR, req.params.id, filename);
-
-    if (!filePath.startsWith(path.join(LOGS_DIR, req.params.id))) {
+    const filePath = path.resolve(serverLogDir, filename);
+    if (!pathInside(serverLogDir, filePath)) {
         return res.status(403).json({ error: 'Access denied' });
     }
 

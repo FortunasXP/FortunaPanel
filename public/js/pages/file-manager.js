@@ -25,10 +25,10 @@ export async function render(container, params) {
 function renderLayout(container) {
     container.innerHTML = `
         <div class="mb-5 flex items-center justify-between">
-            <h1 class="text-2xl font-semibold tracking-tight text-foreground">File Manager</h1>
+            <h1 class="page-title">File Manager</h1>
         </div>
         <div id="breadcrumbPath" class="mb-4 font-mono text-xs text-muted-foreground"></div>
-        <div class="grid h-[calc(100vh-220px)] grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="grid min-h-[400px] grid-cols-1 gap-4 md:h-[calc(100vh-220px)] md:grid-cols-2">
             <div class="overflow-y-auto rounded-lg border border-border bg-card" id="fileList"></div>
             <div class="flex flex-col rounded-lg border border-border bg-card" id="editorPanel">
                 <div class="m-auto p-4 text-center text-muted-foreground">

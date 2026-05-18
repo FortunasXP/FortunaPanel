@@ -213,9 +213,27 @@ class App {
         const backdrop = document.getElementById('sidebarBackdrop');
         if (!trigger || !shell) return;
 
+        // Keep aria-expanded in sync with whether the drawer is open on
+        // mobile (so screen readers announce the state correctly).
+        const syncAriaExpanded = () => {
+            const isMobile = window.matchMedia('(max-width: 768px)').matches;
+            const open = isMobile && shell.classList.contains('sidebar-open');
+            trigger.setAttribute('aria-expanded', String(open));
+        };
+
         trigger.addEventListener('click', () => {
             if (window.matchMedia('(max-width: 768px)').matches) {
                 shell.classList.toggle('sidebar-open');
+                syncAriaExpanded();
+                // When opening on mobile, move focus into the sidebar so
+                // keyboard users can navigate it; when closing, return
+                // focus to the trigger.
+                if (shell.classList.contains('sidebar-open')) {
+                    const firstLink = shell.querySelector('.sidebar a, .sidebar button');
+                    firstLink?.focus();
+                } else {
+                    trigger.focus();
+                }
             } else {
                 const state = shell.dataset.sidebarState === 'collapsed' ? 'expanded' : 'collapsed';
                 shell.dataset.sidebarState = state;
@@ -223,7 +241,24 @@ class App {
             }
         });
 
-        backdrop?.addEventListener('click', () => shell.classList.remove('sidebar-open'));
+        backdrop?.addEventListener('click', () => {
+            shell.classList.remove('sidebar-open');
+            syncAriaExpanded();
+            trigger.focus();
+        });
+
+        // Esc closes the mobile drawer.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && shell.classList.contains('sidebar-open')) {
+                shell.classList.remove('sidebar-open');
+                syncAriaExpanded();
+                trigger.focus();
+            }
+        });
+
+        // Re-sync on resize so the desktop expanded/collapsed states
+        // don't leave a stale "expanded" attribute behind.
+        window.addEventListener('resize', syncAriaExpanded);
 
         // Restore persisted state on load (desktop only)
         if (!window.matchMedia('(max-width: 768px)').matches) {
@@ -308,6 +343,8 @@ class App {
         this.route();
         // Close mobile drawer after navigation
         document.querySelector('.sidebar-shell')?.classList.remove('sidebar-open');
+        const trigger = document.getElementById('sidebarTrigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
     }
 
     async route() {
@@ -488,6 +525,26 @@ export function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+// Sanitize a URL before placing it in href/src. Rejects javascript:,
+// data:, vbscript: and similar schemes that would execute on click;
+// returns the safe value or "#" otherwise. Always pipe through
+// escapeHtml after this for double-defense against attribute breakout.
+export function safeHref(value) {
+    if (!value) return '#';
+    const trimmed = String(value).trim();
+    if (!trimmed) return '#';
+    // Allow same-page anchors and relative paths.
+    if (trimmed.startsWith('#') || trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) {
+        return trimmed;
+    }
+    // Otherwise insist on an explicit safe scheme.
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:')) {
+        return trimmed;
+    }
+    return '#';
+}
+
 export function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
@@ -501,14 +558,25 @@ export function showToast(message, type = 'info') {
 
 // Modal utility. `content` is allowed to be raw HTML because callers build
 // structured forms; `title` and button labels are always escaped.
+//
+// Accessibility:
+// - Adds role="dialog" + aria-modal + aria-labelledby
+// - Moves focus to the first interactive element on open
+// - Restores focus to the previously-focused element on close
+// - Closes on Escape
+// - Traps Tab/Shift-Tab within the dialog
 export function showModal(title, content, actions = []) {
     const overlay = document.getElementById('modalOverlay');
     const modal = document.getElementById('modal');
 
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'modalTitle');
+
     modal.innerHTML = `
         <div class="modal-header">
-            <h3 class="modal-title">${escapeHtml(title)}</h3>
-            <button class="modal-close" id="modalClose">&times;</button>
+            <h3 class="modal-title" id="modalTitle">${escapeHtml(title)}</h3>
+            <button class="modal-close" id="modalClose" aria-label="Close dialog">&times;</button>
         </div>
         <div class="modal-body">${content}</div>
         ${actions.length ? `<div class="modal-footer">${actions.map(a =>
@@ -521,7 +589,50 @@ export function showModal(title, content, actions = []) {
     // Replace native selects in modal with dark custom dropdowns
     replaceSelects(modal);
 
-    const close = () => overlay.classList.remove('active');
+    // Remember what was focused so we can restore on close.
+    const previouslyFocused = document.activeElement;
+
+    const focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () => Array.from(modal.querySelectorAll(focusableSelector));
+
+    // Move focus into the modal. Prefer the first input over the close
+    // button so users can start typing immediately.
+    const focusables = getFocusable();
+    const firstInput = modal.querySelector('input:not([type="hidden"]), textarea, select');
+    (firstInput || focusables[1] || focusables[0])?.focus();
+
+    const keydownHandler = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            close();
+            return;
+        }
+        if (e.key === 'Tab') {
+            const list = getFocusable();
+            if (list.length === 0) return;
+            const first = list[0];
+            const last = list[list.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+    };
+
+    const close = () => {
+        overlay.classList.remove('active');
+        document.removeEventListener('keydown', keydownHandler);
+        // Restore focus to the element that opened the modal so keyboard
+        // users don't get dumped on <body>.
+        if (previouslyFocused && previouslyFocused.focus) {
+            try { previouslyFocused.focus(); } catch (_) {}
+        }
+    };
+
+    document.addEventListener('keydown', keydownHandler);
     document.getElementById('modalClose').onclick = close;
     overlay.onclick = (e) => { if (e.target === overlay) close(); };
 

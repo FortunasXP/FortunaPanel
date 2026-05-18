@@ -17,11 +17,16 @@ router.put('/settings', requirePermission('server.settings'), (req, res) => {
     const nm = req.app.locals.notificationManager;
     if (!nm) return res.status(503).json({ error: 'Notification manager not available' });
 
-    const settings = nm.updateSettings(req.body);
-    res.json(settings);
+    try {
+        const settings = nm.updateSettings(req.body);
+        res.json(settings);
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
 });
 
 // POST /api/notifications/test - Send a test notification
+const NotificationManager = require('../managers/NotificationManager');
 router.post('/test', requirePermission('server.settings'), async (req, res) => {
     const nm = req.app.locals.notificationManager;
     if (!nm) return res.status(503).json({ error: 'Notification manager not available' });
@@ -29,24 +34,9 @@ router.post('/test', requirePermission('server.settings'), async (req, res) => {
     const { webhookUrl } = req.body;
     const targetUrl = webhookUrl || nm.settings.discord.webhookUrl;
 
-    // SSRF protection: only allow HTTPS Discord webhook URLs
-    if (targetUrl) {
-        try {
-            const parsed = new URL(targetUrl);
-            if (parsed.protocol !== 'https:') {
-                return res.status(400).json({ error: 'Webhook URL must use HTTPS' });
-            }
-            // Block private/internal IPs
-            const hostname = parsed.hostname;
-            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
-                hostname.startsWith('10.') || hostname.startsWith('192.168.') ||
-                hostname.match(/^172\.(1[6-9]|2\d|3[01])\./) ||
-                hostname === '0.0.0.0' || hostname.startsWith('169.254.')) {
-                return res.status(400).json({ error: 'Webhook URL must not point to internal addresses' });
-            }
-        } catch {
-            return res.status(400).json({ error: 'Invalid webhook URL' });
-        }
+    if (!targetUrl) return res.status(400).json({ error: 'No webhook URL configured' });
+    if (!NotificationManager._isAllowedWebhookUrl(targetUrl)) {
+        return res.status(400).json({ error: 'Webhook URL must be a Discord webhook URL (https://discord.com/api/webhooks/...)' });
     }
 
     try {

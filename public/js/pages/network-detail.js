@@ -12,6 +12,10 @@ let statusListener = null;
 let healthListener = null;
 let maintenanceListener = null;
 let rollingRestartListener = null;
+// Module-scoped so destroy() can clear pending refresh timers when the
+// user navigates away mid-debounce. Previously a render-local closure
+// kept the timer alive past navigation and refreshed dead UI.
+let refreshTimer = null;
 
 export function breadcrumbs(params) {
     return [
@@ -32,10 +36,10 @@ export async function render(container, params) {
     renderPage(container, params);
 
     // Real-time updates via WebSocket (debounced to avoid rapid re-renders)
-    let refreshTimer = null;
     const refresh = () => {
         if (refreshTimer) clearTimeout(refreshTimer);
         refreshTimer = setTimeout(async () => {
+            refreshTimer = null;
             try {
                 network = await api.get(`/networks/${params.id}`);
                 renderPage(container, params);
@@ -97,7 +101,7 @@ function renderPage(container, params) {
     container.innerHTML = `
         <div class="page-header mb-6">
             <div class="flex items-center gap-3">
-                <h1 class="page-title font-semibold">${escapeHtml(network.name)}</h1>
+                <h1 class="page-title">${escapeHtml(network.name)}</h1>
                 <span class="proxy-type-badge border-border bg-muted text-foreground">${typeBadge}</span>
                 <span class="status-dot status-${proxyStatus}"></span>
             </div>
@@ -175,8 +179,10 @@ function renderOverview(el, container, params) {
     const healthDot = (b) => {
         const h = b.health;
         if (!h || h.status === 'unknown') return '';
-        const color = h.status === 'healthy' ? '#e4e4e7' : '#71717a';
-        return `<span class="ml-1 inline-block h-1.5 w-1.5 rounded-full" style="background:${color}" title="Health: ${h.status}"></span>`;
+        // Token-driven so theme updates propagate. Healthy = chart-2 (green),
+        // anything else = muted-foreground.
+        const colorVar = h.status === 'healthy' ? 'hsl(var(--chart-2))' : 'hsl(var(--muted-foreground))';
+        return `<span class="ml-1 inline-block h-1.5 w-1.5 rounded-full" style="background:${colorVar}" title="Health: ${h.status}"></span>`;
     };
 
     el.innerHTML = `
@@ -799,7 +805,11 @@ async function renderHealth(el, container, params) {
                     <div>
                         ${backends.map(b => {
                             const h = healthData[b.id] || b.health || { status: 'unknown' };
-                            const dotColor = h.status === 'healthy' ? '#22c55e' : h.status === 'unhealthy' ? '#ef4444' : '#71717a';
+                            const dotColor = h.status === 'healthy'
+                                ? 'hsl(var(--chart-2))'
+                                : h.status === 'unhealthy'
+                                ? 'hsl(var(--destructive))'
+                                : 'hsl(var(--muted-foreground))';
                             const lastCheck = h.lastCheck ? new Date(h.lastCheck).toLocaleTimeString() : 'Never';
                             return `
                                 <div class="list-item px-5 py-3.5">
@@ -918,7 +928,7 @@ function renderSettings(el, container, params) {
                             <div class="flex flex-wrap gap-1.5">
                                 ${backends.map(b => {
                                     const inStage = stage.includes(b.id);
-                                    return `<label class="flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-1 text-xs" style="background:${inStage ? 'var(--bg-card)' : 'transparent'}">
+                                    return `<label class="flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-1 text-xs ${inStage ? 'bg-card' : ''}">
                                         <input type="checkbox" class="boot-order-cb accent-white" data-stage="${i}" data-server="${escapeHtml(b.id)}" ${inStage ? 'checked' : ''}>
                                         ${escapeHtml(b.alias || b.name)}
                                     </label>`;
@@ -1093,6 +1103,10 @@ export function destroy() {
         ws.off('rolling-restart-progress', rollingRestartListener);
         ws.off('rolling-restart-completed', rollingRestartListener);
         rollingRestartListener = null;
+    }
+    if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
     }
     network = null;
     currentTab = 'overview';

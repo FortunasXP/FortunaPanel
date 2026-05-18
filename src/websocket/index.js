@@ -5,6 +5,17 @@ const logger = require('../utils/logger');
 const config = require('../config/default');
 const { setupHandlers, cleanupHandlers } = require('./handlers');
 
+// Re-verify a token against signature, expiry, and the revocation store.
+// Used at connect time and every minute thereafter so a /logout call
+// kicks live WS sessions for that user instead of leaving them open
+// until natural JWT expiry.
+function verifyAndCheckRevocation(token, revokedStore) {
+    const decoded = verifyToken(token);
+    if (!decoded) return null;
+    if (decoded.jti && revokedStore && revokedStore.isRevoked(decoded.jti)) return null;
+    return decoded;
+}
+
 function isOriginAllowed(origin, host) {
     // No Origin header: accept. Non-browser clients (Electron renderer with no
     // explicit Origin, panel CLI tools) don't send Origin.
@@ -24,7 +35,7 @@ function isOriginAllowed(origin, host) {
     }
 }
 
-function setupWebSocket(httpServer, serverManager, systemMonitor, resourceLimiter, networkManager, healthMonitor, permissionManager, jobManager) {
+function setupWebSocket(httpServer, serverManager, systemMonitor, resourceLimiter, networkManager, healthMonitor, permissionManager, jobManager, app) {
     const wss = new WebSocket.Server({
         server: httpServer,
         path: '/ws',
@@ -51,7 +62,11 @@ function setupWebSocket(httpServer, serverManager, systemMonitor, resourceLimite
             const params = new URL(req.url, `http://${req.headers.host}`);
             token = params.searchParams.get('token');
         }
-        const user = verifyToken(token);
+        // Get revocation store via httpServer app reference so we can
+        // re-check periodically. May be undefined in tests; degrade to
+        // expiry-only validation in that case.
+        const revokedStore = app?.locals?.revokedTokenStore || null;
+        const user = verifyAndCheckRevocation(token, revokedStore);
 
         if (!user) {
             ws.close(4001, 'Unauthorized');
@@ -59,6 +74,7 @@ function setupWebSocket(httpServer, serverManager, systemMonitor, resourceLimite
         }
 
         ws.user = user;
+        ws.authToken = token; // kept so we can re-verify periodically
         ws.subscriptions = new Set();
         ws.isAlive = true;
 
@@ -90,13 +106,30 @@ function setupWebSocket(httpServer, serverManager, systemMonitor, resourceLimite
         });
     }, 30000);
 
+    // Token re-validation every 60s. Closes connections whose JWT has
+    // expired or been revoked since connect-time. Previously the panel
+    // happily streamed console output to a token revoked an hour ago.
+    const tokenRecheck = setInterval(() => {
+        const revokedStore = app?.locals?.revokedTokenStore || null;
+        wss.clients.forEach(ws => {
+            if (ws.readyState !== 1) return;
+            if (!ws.authToken) return;
+            const stillValid = verifyAndCheckRevocation(ws.authToken, revokedStore);
+            if (!stillValid) {
+                logger.info(`WebSocket revalidation failed: ${ws.user?.username} — closing`);
+                try { ws.close(4001, 'Token expired or revoked'); } catch (_) {}
+            }
+        });
+    }, 60000);
+
     wss.on('close', () => {
         clearInterval(heartbeat);
+        clearInterval(tokenRecheck);
         cleanupHandlers();
     });
 
     // Wire ServerManager and NetworkManager events to broadcast
-    setupHandlers(wss, serverManager, networkManager, healthMonitor, jobManager);
+    setupHandlers(wss, serverManager, networkManager, healthMonitor, jobManager, permissionManager);
 
     // Wire SystemMonitor stats to broadcast
     if (systemMonitor) {
@@ -167,6 +200,16 @@ function handleMessage(ws, msg, serverManager, permissionManager) {
                 }
                 if (!permissionManager.hasPermission(ws.user.username, msg.serverId, 'server.command')) {
                     ws.send(JSON.stringify({ type: 'error', message: 'Permission denied: server.command' }));
+                    return;
+                }
+                // Match the REST route's 500-char cap so a misbehaving
+                // client can't shovel megabytes per second through stdin.
+                if (typeof msg.command !== 'string') {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Command must be a string' }));
+                    return;
+                }
+                if (msg.command.length > 500) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Command too long (max 500 chars)' }));
                     return;
                 }
                 const instance = serverManager.getServer(msg.serverId);

@@ -141,9 +141,38 @@ class NodeManager extends EventEmitter {
 
     /**
      * Authenticate an incoming agent WebSocket connection.
+     * Uses a constant-time comparison so the find() loop's early-exit
+     * doesn't leak bytes of the stored token to a network observer.
      */
     authenticateAgent(token) {
-        return this._nodes.find(n => n.token === token) || null;
+        if (typeof token !== 'string' || token.length === 0) return null;
+        let match = null;
+        const provided = Buffer.from(token);
+        for (const n of this._nodes) {
+            if (typeof n.token !== 'string') continue;
+            const stored = Buffer.from(n.token);
+            // timingSafeEqual requires equal-length buffers; pad/skip
+            // mismatched lengths so the compare itself is constant time
+            // for matching-length inputs (the common case where the
+            // attacker has guessed the right length).
+            if (stored.length !== provided.length) continue;
+            if (crypto.timingSafeEqual(stored, provided)) {
+                match = n;
+                // Don't break: keep iterating so the total work is the
+                // same regardless of which node matches.
+            }
+        }
+        return match;
+    }
+
+    /**
+     * Strip secret fields from a node before returning to API callers.
+     * The raw token is only available via getNodeWithToken() (admin-only).
+     */
+    _publicNode(node) {
+        if (!node) return null;
+        const { token, ...rest } = node;
+        return rest;
     }
 
     /**
@@ -226,9 +255,24 @@ class NodeManager extends EventEmitter {
     }
 
     /**
-     * Get a single node (includes token for admin display).
+     * Get a single node WITHOUT its token. Safe to return to any caller
+     * with `panel.read`.
      */
     getNode(nodeId) {
+        const node = this._nodes.find(n => n.id === nodeId);
+        if (!node) return null;
+        return {
+            ...this._publicNode(node),
+            status: this.isOnline(nodeId) ? STATUS.ONLINE : STATUS.OFFLINE
+        };
+    }
+
+    /**
+     * Get a single node INCLUDING its token. Call only from admin-gated
+     * routes (e.g. revealing the token to the user who registered the
+     * node). Audit-log every call site.
+     */
+    getNodeWithToken(nodeId) {
         const node = this._nodes.find(n => n.id === nodeId);
         if (!node) return null;
         return {

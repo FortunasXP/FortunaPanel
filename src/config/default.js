@@ -69,4 +69,7 @@ module.exports = {
     maxServers: parseInt(process.env.MAX_SERVERS) || 10,
     logLevel: process.env.LOG_LEVEL || 'info',
     allowedOrigins,
+    // Reverse-proxy trust setting; see src/index.js for the policy.
+    // Unset = "loopback" only; "true" = trust 1 hop; otherwise pass-through.
+    trustProxy: process.env.TRUST_PROXY,
 };

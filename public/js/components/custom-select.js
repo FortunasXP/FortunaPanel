@@ -118,19 +118,16 @@ function createCustomSelect(select) {
         }
     });
 
-    // Close on Escape (anywhere in document when open)
-    wrapper._escHandler = (e) => {
-        if (e.key === 'Escape' && wrapper.classList.contains('open')) {
-            wrapper.classList.remove('open');
-        }
-    };
-    document.addEventListener('keydown', wrapper._escHandler);
+    // Close on Escape is handled by a SINGLE global keydown listener at
+    // module load time (see bottom of file). The previous code added a
+    // per-instance `document.addEventListener('keydown', ...)` that was
+    // never removed — across SPA navigations these accumulated.
 
     // Observe disabled attribute changes on native select
-    const observer = new MutationObserver(() => {
+    const disabledObserver = new MutationObserver(() => {
         trigger.disabled = select.disabled;
     });
-    observer.observe(select, { attributes: true, attributeFilter: ['disabled'] });
+    disabledObserver.observe(select, { attributes: true, attributeFilter: ['disabled'] });
 
     // If the native select value is changed programmatically, sync display
     // (using a MutationObserver on children to catch dynamic option rebuilds)
@@ -140,6 +137,25 @@ function createCustomSelect(select) {
         triggerText.textContent = cur ? cur.textContent : '';
     });
     childObserver.observe(select, { childList: true, subtree: true });
+
+    // Disconnect both observers when the wrapper is removed from the DOM
+    // (SPA navigation, modal close, etc.). Without this, observers keep
+    // references to wrapper/trigger/select and pile up forever.
+    if (wrapper.parentNode) {
+        const removalObserver = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                for (const removed of m.removedNodes) {
+                    if (removed === wrapper || (removed.contains && removed.contains(wrapper))) {
+                        disabledObserver.disconnect();
+                        childObserver.disconnect();
+                        removalObserver.disconnect();
+                        return;
+                    }
+                }
+            }
+        });
+        removalObserver.observe(wrapper.parentNode, { childList: true, subtree: true });
+    }
 }
 
 /**
@@ -170,6 +186,15 @@ function closeAllDropdowns() {
 // Global click-outside listener (registered once)
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.custom-select-wrapper')) {
+        closeAllDropdowns();
+    }
+});
+
+// Global Escape listener (registered once) — replaces the per-instance
+// keydown listener that previously accumulated on every custom-select
+// creation across SPA navigations.
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
         closeAllDropdowns();
     }
 });

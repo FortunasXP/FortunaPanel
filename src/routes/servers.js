@@ -399,8 +399,11 @@ router.get('/:id/export', requirePermission('backup.create'), asyncRoute(async (
     if (!backupManager) return res.status(500).json({ error: 'Backup manager unavailable' });
 
     try {
-        // Create temp backup
-        const backup = await backupManager.createBackup(req.params.id, instance.config.directory, 'export');
+        // createBackup expects the ServerInstance, not raw args. The old
+        // signature `(id, directory, label)` silently broke export because
+        // the first arg was treated as the instance and `.config.directory`
+        // was dereferenced on a string.
+        const backup = await backupManager.createBackup(instance, req.user?.username || 'export');
         const backupPath = backup.path;
 
         // Sanitize filename: strip quotes and non-ASCII to prevent header injection
@@ -412,10 +415,16 @@ router.get('/:id/export', requirePermission('backup.create'), asyncRoute(async (
         const stream = fs.createReadStream(backupPath);
         stream.pipe(res);
 
-        // Clean up temp backup after download
-        stream.on('end', () => {
-            try { fs.unlinkSync(backupPath); } catch (e) {}
-        });
+        // Clean up temp backup on success, on client disconnect, or on error.
+        // The previous `'end'`-only path leaked the file whenever the
+        // client aborted mid-download.
+        const cleanup = () => {
+            try { fs.unlinkSync(backupPath); } catch (_) {}
+        };
+        stream.on('end', cleanup);
+        stream.on('close', cleanup);
+        stream.on('error', cleanup);
+        res.on('close', cleanup);
     } catch (err) {
         res.status(500).json({ error: `Export failed: ${err.message}` });
     }

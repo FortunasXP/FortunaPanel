@@ -111,6 +111,27 @@ function safePid(value, field = 'pid') {
     return pid;
 }
 
+// Path-separator-aware containment check. Guards against the classic
+// startsWith bug where rootDir="/srv/s1" permits "/srv/s1-evil".
+// Both inputs MUST be absolute paths (call path.resolve first).
+function pathInside(rootDir, candidate) {
+    if (candidate === rootDir) return true;
+    const sep = path.sep;
+    const withSep = rootDir.endsWith(sep) ? rootDir : rootDir + sep;
+    return candidate.startsWith(withSep);
+}
+
+// UUID v4 validator — used for server IDs in URL params. Returns the
+// trimmed string on success; throws otherwise. Rejects path-traversal
+// characters and any other input shape.
+function safeUuid(value, field = 'id') {
+    const v = requireString(value, field, { max: 64 });
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(v)) {
+        throw badRequest(`${field} is not a valid UUID`);
+    }
+    return v;
+}
+
 module.exports = {
     requireString,
     optionalString,
@@ -121,5 +142,7 @@ module.exports = {
     safeMinecraftUsername,
     safeConsoleLine,
     safeIpAddress,
-    safePid
+    safePid,
+    pathInside,
+    safeUuid
 };

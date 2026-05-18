@@ -5,6 +5,7 @@ const path = require('path');
 const { authMiddleware, requirePermission } = require('../middleware/auth');
 const { asyncRoute } = require('../utils/http');
 const { parse, stringify, PROPERTY_METADATA } = require('../utils/propertiesParser');
+const { pathInside } = require('../utils/validation');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -17,12 +18,12 @@ function getServerDir(req) {
     const manager = getManager(req);
     const instance = manager.getServer(req.params.id);
     if (!instance) return null;
-    return instance.config.directory;
+    return path.resolve(instance.config.directory);
 }
 
 function safePath(serverDir, requestedPath) {
     const resolved = path.resolve(serverDir, requestedPath || '');
-    if (!resolved.startsWith(serverDir)) return null;
+    if (!pathInside(serverDir, resolved)) return null;
     return resolved;
 }
 

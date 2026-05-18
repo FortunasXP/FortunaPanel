@@ -28,9 +28,11 @@ export function initKeyboardShortcuts() {
 }
 
 function handleKeydown(e) {
-    // Don't intercept when typing in inputs/textareas/selects or contenteditable
-    const tag = e.target.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+    // Don't intercept when typing in inputs/textareas/selects or contenteditable.
+    // e.target can be `document` itself for synthetic dispatched events, so
+    // guard against the missing tagName instead of crashing on undefined.
+    const tag = e.target?.tagName ? e.target.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
 
     // Don't intercept when a modal is open
     const overlay = document.getElementById('modalOverlay');

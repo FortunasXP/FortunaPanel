@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { ws } from '../websocket.js';
 import { app, showToast, showModal, escapeHtml } from '../app.js';
 import { ConsoleComponent } from '../components/console.js';
-import { drawChart } from '../components/chart.js';
+import { drawChart, getCSSColor } from '../components/chart.js';
 import { parseYaml, stringifyYaml } from '../components/yaml-parser.js';
 import { parseToml, stringifyToml } from '../components/toml-parser.js';
 import { getConfigDefinition, getCategories } from '../config-definitions.js';
@@ -134,6 +134,13 @@ function isProxyServer() {
     return ['velocity', 'bungeecord'].includes(server?.type);
 }
 
+// Render a single tab as a real <button> with the correct ARIA. Was
+// previously a <div>, which broke keyboard activation and screen readers.
+function renderTabButton(tabKey, label, currentTab) {
+    const isActive = currentTab === tabKey;
+    return `<button type="button" class="tab ${isActive ? 'active' : ''}" data-tab="${tabKey}" role="tab" aria-selected="${isActive}" tabindex="${isActive ? '0' : '-1'}">${label}</button>`;
+}
+
 function renderPage(container, params) {
     const statusClass = server.status === 'running' ? 'online' :
                         server.status === 'stopped' ? 'offline' : 'starting';
@@ -157,7 +164,7 @@ function renderPage(container, params) {
                     `}
                 </div>
                 <div>
-                    <h1 class="text-[22px] font-bold tracking-tight text-foreground">${escapeHtml(server.name)}</h1>
+                    <h1 class="page-title">${escapeHtml(server.name)}</h1>
                     <div class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                         <span>${escapeHtml(server.type)} ${escapeHtml(server.version)}</span>
                         <span class="text-muted-foreground">&middot;</span>
@@ -206,28 +213,28 @@ function renderPage(container, params) {
                         <line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/>
                     </svg>
                     <div>
-                        <div class="text-sm font-medium text-foreground">Part of network <strong>${networkInfo.name}</strong></div>
-                        <div class="mt-0.5 text-xs text-muted-foreground">${networkInfo.role === 'proxy' ? 'Proxy server for this network' : `Backend server${networkInfo.alias ? ` (alias: ${networkInfo.alias})` : ''}`}</div>
+                        <div class="text-sm font-medium text-foreground">Part of network <strong>${escapeHtml(networkInfo.name)}</strong></div>
+                        <div class="mt-0.5 text-xs text-muted-foreground">${networkInfo.role === 'proxy' ? 'Proxy server for this network' : `Backend server${networkInfo.alias ? ` (alias: ${escapeHtml(networkInfo.alias)})` : ''}`}</div>
                     </div>
                 </div>
-                <a href="/network/${networkInfo.id}" class="btn btn-secondary btn-sm" id="viewNetworkLink">View Network</a>
+                <a href="/network/${encodeURIComponent(networkInfo.id)}" class="btn btn-secondary btn-sm" id="viewNetworkLink">View Network</a>
             </div>
         ` : ''}
 
-        <div class="tabs">
-            <div class="tab ${activeTab === 'console' ? 'active' : ''}" data-tab="console">Console</div>
-            ${!isProxyServer() ? `<div class="tab ${activeTab === 'stats' ? 'active' : ''}" data-tab="stats">Stats</div>` : ''}
-            ${!isProxyServer() ? `<div class="tab ${activeTab === 'players' ? 'active' : ''}" data-tab="players">Players</div>` : ''}
-            <div class="tab ${activeTab === 'files' ? 'active' : ''}" data-tab="files">Files</div>
-            ${!isProxyServer() ? `<div class="tab ${activeTab === 'plugins' ? 'active' : ''}" data-tab="plugins">Plugins</div>` : ''}
-            <div class="tab ${activeTab === 'backups' ? 'active' : ''}" data-tab="backups">Backups</div>
-            <div class="tab ${activeTab === 'snapshots' ? 'active' : ''}" data-tab="snapshots">Snapshots</div>
-            <div class="tab ${activeTab === 'startup' ? 'active' : ''}" data-tab="startup">Startup</div>
-            ${!isProxyServer() ? `<div class="tab ${activeTab === 'properties' ? 'active' : ''}" data-tab="properties">Properties</div>` : ''}
-            <div class="tab ${activeTab === 'config' ? 'active' : ''}" data-tab="config">Config</div>
-            <div class="tab ${activeTab === 'permissions' ? 'active' : ''}" data-tab="permissions">Permissions</div>
-            <div class="tab ${activeTab === 'dns' ? 'active' : ''}" data-tab="dns">DNS</div>
-            <div class="tab ${activeTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</div>
+        <div class="tabs" role="tablist" aria-label="Server sections">
+            ${renderTabButton('console', 'Console', activeTab)}
+            ${!isProxyServer() ? renderTabButton('stats', 'Stats', activeTab) : ''}
+            ${!isProxyServer() ? renderTabButton('players', 'Players', activeTab) : ''}
+            ${renderTabButton('files', 'Files', activeTab)}
+            ${!isProxyServer() ? renderTabButton('plugins', 'Plugins', activeTab) : ''}
+            ${renderTabButton('backups', 'Backups', activeTab)}
+            ${renderTabButton('snapshots', 'Snapshots', activeTab)}
+            ${renderTabButton('startup', 'Startup', activeTab)}
+            ${!isProxyServer() ? renderTabButton('properties', 'Properties', activeTab) : ''}
+            ${renderTabButton('config', 'Config', activeTab)}
+            ${renderTabButton('permissions', 'Permissions', activeTab)}
+            ${renderTabButton('dns', 'DNS', activeTab)}
+            ${renderTabButton('settings', 'Settings', activeTab)}
         </div>
 
         <div id="consoleWrapper" class="hidden"><div id="consoleContainer"></div></div>
@@ -319,13 +326,13 @@ function wireControlButtons(container, params) {
     });
     container.querySelector('#deleteBtn')?.addEventListener('click', () => {
         showModal('Delete Server', `
-            <p class="mb-3">Are you sure you want to delete <strong class="text-foreground">${server.name}</strong>?</p>
+            <p class="mb-3">Are you sure you want to delete <strong class="text-foreground">${escapeHtml(server.name)}</strong>?</p>
             <p class="text-xs text-muted-foreground">This will permanently delete all server files.</p>
         `, [
             { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
             { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
                 try {
-                    await api.del(`/servers/${params.id}`);
+                    await api.del(`/servers/${encodeURIComponent(params.id)}`);
                     showToast('Server deleted', 'success');
                     app.navigate('/');
                 } catch (e) { showToast(e.message, 'error'); }
@@ -343,13 +350,37 @@ function wireControls(container, params) {
         app.navigate(e.currentTarget.getAttribute('href'));
     });
 
-    // Tabs
-    container.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            activeTab = tab.dataset.tab;
-            container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            renderTab(container, params);
+    // Tabs — proper tablist behaviour: arrow keys move focus, Home/End
+    // jump to first/last, Enter/Space activate, only the active tab is
+    // tabbable (roving tabindex).
+    const tabs = Array.from(container.querySelectorAll('.tab'));
+    const activate = (tab) => {
+        if (!tab) return;
+        activeTab = tab.dataset.tab;
+        tabs.forEach(t => {
+            const isActive = t === tab;
+            t.classList.toggle('active', isActive);
+            t.setAttribute('aria-selected', String(isActive));
+            t.setAttribute('tabindex', isActive ? '0' : '-1');
+        });
+        renderTab(container, params);
+    };
+    tabs.forEach((tab, idx) => {
+        tab.addEventListener('click', () => activate(tab));
+        tab.addEventListener('keydown', (e) => {
+            let next = null;
+            if (e.key === 'ArrowRight') next = tabs[(idx + 1) % tabs.length];
+            else if (e.key === 'ArrowLeft') next = tabs[(idx - 1 + tabs.length) % tabs.length];
+            else if (e.key === 'Home') next = tabs[0];
+            else if (e.key === 'End') next = tabs[tabs.length - 1];
+            else if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activate(tab);
+                return;
+            } else return;
+            e.preventDefault();
+            next?.focus();
+            activate(next);
         });
     });
 }
@@ -650,45 +681,52 @@ function renderConfigProperty(prop, flatValues) {
 
     const modifiedDot = isModified ? '<span class="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground" title="Modified from default"></span>' : '';
 
+    // Property keys, descriptions, and option lists come from config-definitions.js
+    // (trusted static data), but VALUES come from server-side config files which
+    // could contain arbitrary content. Escape every interpolation defensively so
+    // a stored value containing `"` cannot break out of value="..." attributes.
+    const safeKey = escapeHtml(key);
+    const safeDesc = escapeHtml(prop.description || '');
+
     if (prop.type === 'boolean') {
         return `
             <div class="form-group mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
                 <label class="form-label mb-0 flex cursor-pointer items-center gap-2 text-foreground">
-                    <input type="checkbox" data-config-key="${key}" ${value ? 'checked' : ''} class="accent-white">
-                    <span>${prop.description}${modifiedDot}</span>
+                    <input type="checkbox" data-config-key="${safeKey}" ${value ? 'checked' : ''} class="accent-white">
+                    <span>${safeDesc}${modifiedDot}</span>
                 </label>
-                <div class="form-hint ml-6">${key}</div>
+                <div class="form-hint ml-6">${safeKey}</div>
             </div>`;
     }
 
     if (prop.type === 'select') {
         return `
             <div class="form-group mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
-                <label class="form-label text-xs">${prop.description}${modifiedDot}</label>
-                <select class="form-select max-w-[260px]" data-config-key="${key}">
-                    ${(prop.options || []).map(o => `<option value="${o}" ${String(value) === String(o) ? 'selected' : ''}>${o}</option>`).join('')}
+                <label class="form-label text-xs">${safeDesc}${modifiedDot}</label>
+                <select class="form-select max-w-[260px]" data-config-key="${safeKey}">
+                    ${(prop.options || []).map(o => `<option value="${escapeHtml(String(o))}" ${String(value) === String(o) ? 'selected' : ''}>${escapeHtml(String(o))}</option>`).join('')}
                 </select>
-                <div class="form-hint">${key}</div>
+                <div class="form-hint">${safeKey}</div>
             </div>`;
     }
 
     if (prop.type === 'number') {
         return `
             <div class="form-group mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
-                <label class="form-label text-xs">${prop.description}${modifiedDot}</label>
-                <input type="number" class="form-input max-w-[180px]" data-config-key="${key}" value="${value ?? ''}"
-                       ${prop.min !== undefined ? `min="${prop.min}"` : ''} ${prop.max !== undefined ? `max="${prop.max}"` : ''}
+                <label class="form-label text-xs">${safeDesc}${modifiedDot}</label>
+                <input type="number" class="form-input max-w-[180px]" data-config-key="${safeKey}" value="${escapeHtml(String(value ?? ''))}"
+                       ${prop.min !== undefined ? `min="${escapeHtml(String(prop.min))}"` : ''} ${prop.max !== undefined ? `max="${escapeHtml(String(prop.max))}"` : ''}
                        >
-                <div class="form-hint">${key}${prop.default !== undefined ? ` (default: ${prop.default})` : ''}</div>
+                <div class="form-hint">${safeKey}${prop.default !== undefined ? ` (default: ${escapeHtml(String(prop.default))})` : ''}</div>
             </div>`;
     }
 
     // String
     return `
         <div class="form-group mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
-            <label class="form-label text-xs">${prop.description}${modifiedDot}</label>
-            <input type="text" class="form-input" data-config-key="${key}" value="${escapeHtml(String(value ?? ''))}">
-            <div class="form-hint">${key}</div>
+            <label class="form-label text-xs">${safeDesc}${modifiedDot}</label>
+            <input type="text" class="form-input" data-config-key="${safeKey}" value="${escapeHtml(String(value ?? ''))}">
+            <div class="form-hint">${safeKey}</div>
         </div>`;
 }
 
@@ -910,10 +948,17 @@ async function renderStatsTab(content, params) {
         // Draw charts
         const maxPlayers = Math.max(1, peakPlayers);
         const maxMem = Math.max(1, peakMemory);
-        drawChart('statsPlayersChart', playerData, '#d4d4d8', { maxValue: maxPlayers, showDot: true, fillAlpha: 0.12 });
-        drawChart('statsTpsChart', tpsData, '#a1a1aa', { maxValue: 20, showDot: true, fillAlpha: 0.09 });
-        drawChart('statsMemoryChart', memoryData, '#71717a', { maxValue: maxMem, showDot: true, fillAlpha: 0.14 });
-        drawChart('statsUptimeChart', uptimeData, '#52525b', { maxValue: 1, showDot: false, fillAlpha: 0.19 });
+        // Pull chart colors from CSS tokens so a future theme update
+        // doesn't require touching every page. Falls back to the same
+        // grayscale palette if the tokens are missing.
+        const c1 = getCSSColor('--chart-1', '#d4d4d8');
+        const c2 = getCSSColor('--chart-2', '#a1a1aa');
+        const c3 = getCSSColor('--chart-3', '#71717a');
+        const c4 = getCSSColor('--chart-4', '#52525b');
+        drawChart('statsPlayersChart', playerData, c1, { maxValue: maxPlayers, showDot: true, fillAlpha: 0.12 });
+        drawChart('statsTpsChart', tpsData, c2, { maxValue: 20, showDot: true, fillAlpha: 0.09 });
+        drawChart('statsMemoryChart', memoryData, c3, { maxValue: maxMem, showDot: true, fillAlpha: 0.14 });
+        drawChart('statsUptimeChart', uptimeData, c4, { maxValue: 1, showDot: false, fillAlpha: 0.19 });
 
         // Wire range buttons
         content.querySelectorAll('[data-range]').forEach(btn => {
@@ -960,7 +1005,7 @@ async function renderPlayersTab(content, params) {
                 ${players.map(p => `
                     <div class="player-item">
                         <div class="player-info">
-                            <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/32" alt="${escapeHtml(p)}" loading="lazy">
+                            <img class="player-avatar" src="https://mc-heads.net/avatar/${encodeURIComponent(p)}/32" alt="" loading="lazy">
                             <span class="player-name">${escapeHtml(p)}</span>
                         </div>
                         <div class="player-actions">
@@ -973,20 +1018,38 @@ async function renderPlayersTab(content, params) {
         `;
 
         content.querySelectorAll('[data-kick]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    await api.post(`/servers/${params.id}/command`, { command: `kick ${btn.dataset.kick}` });
-                    showToast(`Kicked ${btn.dataset.kick}`, 'success');
-                } catch (e) { showToast(e.message, 'error'); }
+            btn.addEventListener('click', () => {
+                const player = btn.dataset.kick;
+                showModal('Kick Player', `
+                    <p>Kick <strong>${escapeHtml(player)}</strong> from the server?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">They will be disconnected and can rejoin freely.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'kick', label: 'Kick', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.post(`/servers/${encodeURIComponent(params.id)}/command`, { command: `kick ${player}` });
+                            showToast(`Kicked ${player}`, 'success');
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
             });
         });
 
         content.querySelectorAll('[data-ban]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    await api.post(`/servers/${params.id}/command`, { command: `ban ${btn.dataset.ban}` });
-                    showToast(`Banned ${btn.dataset.ban}`, 'success');
-                } catch (e) { showToast(e.message, 'error'); }
+            btn.addEventListener('click', () => {
+                const player = btn.dataset.ban;
+                showModal('Ban Player', `
+                    <p>Ban <strong>${escapeHtml(player)}</strong>?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">They will be disconnected and not allowed to rejoin until unbanned.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'ban', label: 'Ban', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.post(`/servers/${encodeURIComponent(params.id)}/command`, { command: `ban ${player}` });
+                            showToast(`Banned ${player}`, 'success');
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
             });
         });
     } catch (e) {
@@ -1160,8 +1223,8 @@ async function renderPluginsTab(content, params) {
                                 </div>
                             </div>
                             <div class="flex shrink-0 gap-1.5">
-                                <button class="btn btn-sm btn-secondary" data-toggle-plugin='${JSON.stringify({filename: p.filename, folder: p.folder})}'>${p.enabled ? 'Disable' : 'Enable'}</button>
-                                <button class="btn btn-sm btn-danger" data-delete-plugin='${JSON.stringify({filename: p.filename, folder: p.folder})}'>Delete</button>
+                                <button class="btn btn-sm btn-secondary" data-toggle-plugin="${escapeHtml(JSON.stringify({filename: p.filename, folder: p.folder}))}">${p.enabled ? 'Disable' : 'Enable'}</button>
+                                <button class="btn btn-sm btn-danger" data-delete-plugin="${escapeHtml(JSON.stringify({filename: p.filename, folder: p.folder}))}">Delete</button>
                             </div>
                         </div>
                     `).join('')}
@@ -1201,11 +1264,11 @@ async function renderPluginsTab(content, params) {
         content.querySelectorAll('[data-delete-plugin]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const data = JSON.parse(btn.dataset.deletePlugin);
-                showModal('Delete Plugin', `<p>Delete <strong>${data.filename}</strong>?</p>`, [
+                showModal('Delete Plugin', `<p>Delete <strong>${escapeHtml(data.filename)}</strong>?</p>`, [
                     { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
                     { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
                         try {
-                            await api.request('DELETE', `/servers/${params.id}/plugins`, data);
+                            await api.request('DELETE', `/servers/${encodeURIComponent(params.id)}/plugins`, data);
                             showToast('Plugin deleted', 'success');
                             renderPluginsTab(content, params);
                         } catch (err) { showToast(err.message, 'error'); }
@@ -1260,9 +1323,9 @@ function renderModrinthBrowser(content, params) {
             results.innerHTML = `
                 <div class="overflow-hidden rounded-lg border border-border">
                     ${items.map((p, i) => `
-                        <div class="flex items-center gap-3 px-4 py-3.5 ${i < items.length - 1 ? 'border-b border-border' : ''}" data-modrinth-id="${p.id}">
+                        <div class="flex items-center gap-3 px-4 py-3.5 ${i < items.length - 1 ? 'border-b border-border' : ''}" data-modrinth-id="${escapeHtml(p.id)}">
                             <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
-                                ${p.iconUrl ? `<img src="${p.iconUrl}" width="40" height="40" class="object-cover" loading="lazy">` : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'}
+                                ${p.iconUrl && /^https?:\/\//i.test(p.iconUrl) ? `<img src="${escapeHtml(p.iconUrl)}" width="40" height="40" class="object-cover" loading="lazy" alt="">` : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'}
                             </div>
                             <div class="min-w-0 flex-1">
                                 <div class="truncate text-sm font-semibold">${escapeHtml(p.name)}</div>
@@ -1473,7 +1536,7 @@ async function renderBackupsTab(content, params) {
             btn.addEventListener('click', () => {
                 const filename = btn.dataset.restore;
                 showModal('Restore Backup', `
-                    <p class="mb-3">Restore from <strong>${filename}</strong>?</p>
+                    <p class="mb-3">Restore from <strong>${escapeHtml(filename)}</strong>?</p>
                     <p class="text-xs text-muted-foreground">This will overwrite current server files. The server must be stopped.</p>
                 `, [
                     { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
@@ -1487,14 +1550,24 @@ async function renderBackupsTab(content, params) {
             });
         });
 
-        // Delete backup
+        // Delete backup — confirmation before destructive call (was a
+        // single-click no-confirm previously).
         content.querySelectorAll('[data-delete-backup]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    await api.del(`/servers/${params.id}/backups/${btn.dataset.deleteBackup}`);
-                    showToast('Backup deleted', 'success');
-                    renderBackupsTab(content, params);
-                } catch (e) { showToast(e.message, 'error'); }
+            btn.addEventListener('click', () => {
+                const filename = btn.dataset.deleteBackup;
+                showModal('Delete Backup', `
+                    <p>Delete <strong>${escapeHtml(filename)}</strong>?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">This cannot be undone.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/servers/${encodeURIComponent(params.id)}/backups/${encodeURIComponent(filename)}`);
+                            showToast('Backup deleted', 'success');
+                            renderBackupsTab(content, params);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
             });
         });
     } catch (e) {
@@ -1558,14 +1631,14 @@ async function renderSnapshotsTab(content, params) {
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1.5">
-                                    <button class="btn btn-sm btn-secondary" data-restore-snapshot="${escapeHtml(s.id)}" ${isRunning ? 'disabled' : ''} title="Restore">
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                    <button class="btn btn-sm btn-secondary" data-restore-snapshot="${escapeHtml(s.id)}" ${isRunning ? 'disabled' : ''} title="Restore" aria-label="Restore snapshot ${escapeHtml(s.name)}">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                                     </button>
-                                    <a class="btn btn-sm btn-secondary" href="/api/servers/${encodeURIComponent(params.id)}/snapshots/${encodeURIComponent(s.id)}/download" title="Download">
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    <a class="btn btn-sm btn-secondary" href="/api/servers/${encodeURIComponent(params.id)}/snapshots/${encodeURIComponent(s.id)}/download" title="Download" aria-label="Download snapshot ${escapeHtml(s.name)}">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                     </a>
-                                    <button class="btn btn-sm btn-danger" data-delete-snapshot="${escapeHtml(s.id)}" title="Delete">
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    <button class="btn btn-sm btn-danger" data-delete-snapshot="${escapeHtml(s.id)}" title="Delete" aria-label="Delete snapshot ${escapeHtml(s.name)}">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     </button>
                                 </div>
                             </div>
@@ -1575,51 +1648,79 @@ async function renderSnapshotsTab(content, params) {
             `}
         `;
 
-        // Create snapshot
-        content.querySelector('#createSnapshotBtn')?.addEventListener('click', async () => {
-            const name = prompt('Snapshot name (optional):');
-            if (name === null) return; // cancelled
-
-            const btn = content.querySelector('#createSnapshotBtn');
-            btn.disabled = true;
-            btn.textContent = 'Creating...';
-
-            try {
-                await api.post(`/servers/${params.id}/snapshots`, {
-                    name: name || undefined,
-                    description: ''
-                });
-                showToast('Snapshot created!', 'success');
-                renderSnapshotsTab(content, params);
-            } catch (e) {
-                showToast(e.message, 'error');
-                btn.disabled = false;
-                btn.textContent = 'Create Snapshot';
-            }
+        // Create snapshot — themed modal instead of native prompt() so it
+        // matches the rest of the app's a11y story (focus trap, Esc,
+        // role=dialog) and supports optional description.
+        content.querySelector('#createSnapshotBtn')?.addEventListener('click', () => {
+            showModal('Create Snapshot', `
+                <div class="form-group">
+                    <label class="form-label" for="snapshotName">Name (optional)</label>
+                    <input type="text" class="form-input" id="snapshotName" placeholder="e.g. before-1.21-update" maxlength="120">
+                </div>
+                <div class="form-group mb-0">
+                    <label class="form-label" for="snapshotDesc">Description (optional)</label>
+                    <input type="text" class="form-input" id="snapshotDesc" placeholder="What changed?" maxlength="240">
+                </div>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'create', label: 'Create', class: 'btn-primary', onClick: async () => {
+                    const name = document.querySelector('#snapshotName')?.value?.trim();
+                    const description = document.querySelector('#snapshotDesc')?.value?.trim();
+                    const btn = content.querySelector('#createSnapshotBtn');
+                    if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+                    try {
+                        await api.post(`/servers/${encodeURIComponent(params.id)}/snapshots`, {
+                            name: name || undefined,
+                            description: description || ''
+                        });
+                        showToast('Snapshot created!', 'success');
+                        renderSnapshotsTab(content, params);
+                    } catch (e) {
+                        showToast(e.message, 'error');
+                        if (btn) { btn.disabled = false; btn.textContent = 'Create Snapshot'; }
+                    }
+                }}
+            ]);
         });
 
-        // Restore snapshot
+        // Restore snapshot — themed confirmation modal.
         content.querySelectorAll('[data-restore-snapshot]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Restore this snapshot? This will replace ALL current server files.')) return;
-                try {
-                    btn.disabled = true;
-                    await api.post(`/servers/${params.id}/snapshots/${btn.dataset.restoreSnapshot}/restore`);
-                    showToast('Snapshot restored successfully!', 'success');
-                    renderSnapshotsTab(content, params);
-                } catch (e) { showToast(e.message, 'error'); btn.disabled = false; }
+            btn.addEventListener('click', () => {
+                const snapshotId = btn.dataset.restoreSnapshot;
+                showModal('Restore Snapshot', `
+                    <p class="mb-2">Restore this snapshot?</p>
+                    <p class="text-xs text-muted-foreground">This will replace ALL current server files. The server must be stopped.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'restore', label: 'Restore', class: 'btn-primary', onClick: async () => {
+                        try {
+                            btn.disabled = true;
+                            await api.post(`/servers/${encodeURIComponent(params.id)}/snapshots/${encodeURIComponent(snapshotId)}/restore`);
+                            showToast('Snapshot restored successfully!', 'success');
+                            renderSnapshotsTab(content, params);
+                        } catch (e) { showToast(e.message, 'error'); btn.disabled = false; }
+                    }}
+                ]);
             });
         });
 
-        // Delete snapshot
+        // Delete snapshot — themed confirmation modal.
         content.querySelectorAll('[data-delete-snapshot]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Delete this snapshot permanently?')) return;
-                try {
-                    await api.del(`/servers/${params.id}/snapshots/${btn.dataset.deleteSnapshot}`);
-                    showToast('Snapshot deleted', 'success');
-                    renderSnapshotsTab(content, params);
-                } catch (e) { showToast(e.message, 'error'); }
+            btn.addEventListener('click', () => {
+                const snapshotId = btn.dataset.deleteSnapshot;
+                showModal('Delete Snapshot', `
+                    <p>Delete this snapshot permanently?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">This cannot be undone.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/servers/${encodeURIComponent(params.id)}/snapshots/${encodeURIComponent(snapshotId)}`);
+                            showToast('Snapshot deleted', 'success');
+                            renderSnapshotsTab(content, params);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
             });
         });
     } catch (e) {
@@ -1650,8 +1751,8 @@ async function renderStartupTab(content, params) {
                         <span class="settings-card-title text-xs">Startup Command</span>
                     </div>
                     <div class="settings-card-body px-5 py-3.5">
-                        <input type="text" class="form-input font-mono text-xs" id="startupCommand" value="${data.startupCommand || ''}">
-                        <div class="mt-1.5 text-[11px] text-muted-foreground">Use <code>{{VARIABLE}}</code> syntax. Resolved: <span class="text-foreground">${data.resolvedCommand || ''}</span></div>
+                        <input type="text" class="form-input font-mono text-xs" id="startupCommand" value="${escapeHtml(data.startupCommand || '')}">
+                        <div class="mt-1.5 text-[11px] text-muted-foreground">Use <code>{{VARIABLE}}</code> syntax. Resolved: <span class="text-foreground">${escapeHtml(data.resolvedCommand || '')}</span></div>
                     </div>
                 </div>
 
@@ -1946,7 +2047,7 @@ async function renderSettingsTab(content, params) {
                 <div class="settings-card-body">
                     <div class="form-group">
                         <label class="form-label">Server Name</label>
-                        <input type="text" class="form-input" id="settName" value="${server.name}">
+                        <input type="text" class="form-input" id="settName" value="${escapeHtml(server.name)}">
                     </div>
                     <div class="grid grid-cols-1 gap-3.5 md:grid-cols-2">
                         <div class="form-group">
@@ -1964,7 +2065,7 @@ async function renderSettingsTab(content, params) {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Custom JVM Arguments</label>
-                        <input type="text" class="form-input" id="settJvmArgs" value="${(server.jvmArgs || []).join(' ')}" placeholder="-XX:+UseG1GC -Dfml.readTimeout=180">
+                        <input type="text" class="form-input" id="settJvmArgs" value="${escapeHtml((server.jvmArgs || []).join(' '))}" placeholder="-XX:+UseG1GC -Dfml.readTimeout=180">
                         <div class="form-hint">Space-separated JVM flags. Requires restart to apply.</div>
                     </div>
                     <div class="form-group mb-0">
@@ -2174,7 +2275,7 @@ async function renderSettingsTab(content, params) {
         showModal('Clone Server', `
             <div class="form-group">
                 <label class="form-label">New Server Name</label>
-                <input type="text" class="form-input" id="cloneName" value="Copy of ${server.name}">
+                <input type="text" class="form-input" id="cloneName" value="Copy of ${escapeHtml(server.name)}">
             </div>
             <div class="form-group mb-1">
                 <label class="form-label flex cursor-pointer items-center gap-2 text-foreground">
@@ -2210,7 +2311,7 @@ async function renderSettingsTab(content, params) {
         showModal('Save as Template', `
             <div class="form-group mb-0">
                 <label class="form-label">Template Name</label>
-                <input type="text" class="form-input" id="templateName" value="${server.name} Template" placeholder="My Template">
+                <input type="text" class="form-input" id="templateName" value="${escapeHtml(server.name)} Template" placeholder="My Template">
                 <div class="form-hint">This saves the server type, version, memory, and JVM settings as a reusable template.</div>
             </div>
         `, [
@@ -2273,13 +2374,13 @@ async function renderSettingsTab(content, params) {
     // Delete
     content.querySelector('#settDeleteBtn')?.addEventListener('click', () => {
         showModal('Delete Server', `
-            <p class="mb-3">Are you sure you want to delete <strong class="text-foreground">${server.name}</strong>?</p>
+            <p class="mb-3">Are you sure you want to delete <strong class="text-foreground">${escapeHtml(server.name)}</strong>?</p>
             <p class="text-xs text-muted-foreground">This will permanently delete all server files.</p>
         `, [
             { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
             { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
                 try {
-                    await api.del(`/servers/${params.id}`);
+                    await api.del(`/servers/${encodeURIComponent(params.id)}`);
                     showToast('Server deleted', 'success');
                     app.navigate('/');
                 } catch (e) { showToast(e.message, 'error'); }
@@ -2336,19 +2437,19 @@ async function renderDnsTab(content, params) {
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                             <div class="mb-0.5 text-[11px] text-muted-foreground">Domain</div>
-                            <div class="font-mono text-sm">${dns.domain}</div>
+                            <div class="font-mono text-sm">${escapeHtml(dns.domain)}</div>
                         </div>
                         <div>
                             <div class="mb-0.5 text-[11px] text-muted-foreground">Server IP</div>
-                            <div class="font-mono text-sm">${dns.serverIp}</div>
+                            <div class="font-mono text-sm">${escapeHtml(dns.serverIp)}</div>
                         </div>
                         <div>
                             <div class="mb-0.5 text-[11px] text-muted-foreground">Port</div>
-                            <div class="font-mono text-sm">${dns.port || server.port || 25565}</div>
+                            <div class="font-mono text-sm">${escapeHtml(String(dns.port || server.port || 25565))}</div>
                         </div>
                         <div>
                             <div class="mb-0.5 text-[11px] text-muted-foreground">Provider</div>
-                            <div class="text-sm">${dns.providerName || dns.providerId}${dns.providerType ? ` <span class="text-[10px] text-muted-foreground">(${dns.providerType})</span>` : ''}</div>
+                            <div class="text-sm">${escapeHtml(dns.providerName || dns.providerId || '')}${dns.providerType ? ` <span class="text-[10px] text-muted-foreground">(${escapeHtml(dns.providerType)})</span>` : ''}</div>
                         </div>
                     </div>
                 </div>

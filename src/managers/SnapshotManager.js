@@ -145,28 +145,58 @@ class SnapshotManager {
         }
 
         const serverDir = instance.config.directory;
+        const tempDir = path.join(serverDir + '_restore_tmp_' + Date.now());
 
         logger.info(`Restoring snapshot "${snapshot.name}" for server ${instance.name}`);
 
-        // Clear the server directory (except the directory itself)
-        const entries = await fsp.readdir(serverDir);
-        for (const entry of entries) {
-            await fsp.rm(path.join(serverDir, entry), { recursive: true, force: true });
+        // Extract to temp directory first to verify success before deleting
+        await fsp.mkdir(tempDir, { recursive: true });
+
+        try {
+            await new Promise((resolve, reject) => {
+                const { file, args } = buildExpandArgs(archivePath, tempDir);
+                execFile(file, args, {
+                    maxBuffer: 1024 * 1024 * 100,
+                    timeout: 600000
+                }, (error) => {
+                    if (error) {
+                        reject(new Error(`Snapshot restore failed: ${error.message}`));
+                    } else {
+                        resolve();
+                    }
+                });
+            });
+        } catch (e) {
+            // Cleanup temp dir on failure — server data is preserved
+            await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+            throw e;
         }
 
-        // Extract snapshot into server directory
-        await new Promise((resolve, reject) => {
-            const { file, args } = buildExpandArgs(archivePath, serverDir);
-            execFile(file, args, {
-                maxBuffer: 1024 * 1024 * 100,
-                timeout: 600000
-            }, (error) => {
-                if (error) {
-                    reject(new Error(`Snapshot restore failed: ${error.message}`));
-                } else {
-                    resolve();
-                }
-            });
+        // Extraction succeeded — atomically swap with a rename-aside.
+        // The previous approach (clear server dir, then move temp contents
+        // in) had a multi-second window where a panel crash mid-swap
+        // would wipe the server. Now: rename serverDir to a backup name,
+        // rename tempDir to serverDir, then delete the backup. If the
+        // panel crashes between steps 1 and 2 the operator can still
+        // recover by renaming `${serverDir}_old_*` back into place.
+        const backupDir = `${serverDir}_old_${Date.now()}`;
+        try {
+            await fsp.rename(serverDir, backupDir);
+        } catch (e) {
+            await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+            throw new Error(`Failed to set aside old server directory: ${e.message}`);
+        }
+        try {
+            await fsp.rename(tempDir, serverDir);
+        } catch (e) {
+            // Restore the original server directory and remove temp dir
+            await fsp.rename(backupDir, serverDir).catch(() => {});
+            await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+            throw new Error(`Failed to swap in restored server directory: ${e.message}`);
+        }
+        // Both renames succeeded — clean up the old data.
+        await fsp.rm(backupDir, { recursive: true, force: true }).catch((err) => {
+            logger.warn(`Snapshot restore: leftover backup at ${backupDir} (${err.message})`);
         });
 
         // Update the snapshot metadata to track restores

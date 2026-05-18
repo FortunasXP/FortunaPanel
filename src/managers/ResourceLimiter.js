@@ -4,7 +4,9 @@ const os = require('os');
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const { EventEmitter } = require('events');
 const config = require('../config/default');
 const logger = require('../utils/logger');
@@ -57,83 +59,94 @@ class ResourceLimiter extends EventEmitter {
     }
 
     async _check() {
+        // Run per-server checks concurrently so total wall-clock time is
+        // bounded by the slowest server, not the sum. Each check fires
+        // 1-2 short child_process spawns; with sync exec + sequential
+        // iteration, 10 servers could block for several seconds.
+        const targets = [];
         for (const [id, instance] of this.serverManager.servers) {
             if (!instance.process || instance.status !== 'running') continue;
+            targets.push([id, instance]);
+        }
+        await Promise.all(targets.map(([id, instance]) => this._checkOne(id, instance)));
+    }
 
-            const limits = this.limits.get(id) || { cpuPercent: 0, memoryMB: 0, diskMB: 0 };
-            const hasLimits = limits.cpuPercent > 0 || limits.memoryMB > 0 || limits.diskMB > 0;
+    async _checkOne(id, instance) {
+        const limits = this.limits.get(id) || { cpuPercent: 0, memoryMB: 0, diskMB: 0 };
+        const hasLimits = limits.cpuPercent > 0 || limits.memoryMB > 0 || limits.diskMB > 0;
 
-            try {
-                const usage = await this._getProcessUsage(instance.pid);
-                const diskUsage = await this._getDiskUsage(instance.config.directory);
+        try {
+            const [usage, diskUsage] = await Promise.all([
+                this._getProcessUsage(instance.pid),
+                this._getDiskUsage(instance.config.directory)
+            ]);
 
-                const current = {
-                    cpu: usage.cpu,
-                    memory: usage.memory,
-                    disk: diskUsage
-                };
+            const current = {
+                cpu: usage.cpu,
+                memory: usage.memory,
+                disk: diskUsage
+            };
 
-                this.usage.set(id, current);
+            this.usage.set(id, current);
 
-                // Emit usage data for real-time UI (always, even if no limits set)
-                this.emit('usage', { serverId: id, ...current, limits });
+            // Emit usage data for real-time UI (always, even if no limits set)
+            this.emit('usage', { serverId: id, ...current, limits });
 
-                if (!hasLimits) continue;
+            if (!hasLimits) return;
 
-                // Check limits
-                if (!this.warnings.has(id)) {
-                    this.warnings.set(id, { cpu: 0, memory: 0, disk: 0 });
-                }
-                const warns = this.warnings.get(id);
+            // Check limits
+            if (!this.warnings.has(id)) {
+                this.warnings.set(id, { cpu: 0, memory: 0, disk: 0 });
+            }
+            const warns = this.warnings.get(id);
 
-                // CPU limit check
-                if (limits.cpuPercent > 0 && current.cpu > limits.cpuPercent) {
-                    warns.cpu++;
-                    if (warns.cpu >= this.WARN_THRESHOLD) {
-                        this.emit('limit-exceeded', {
-                            serverId: id,
-                            resource: 'cpu',
-                            current: current.cpu,
-                            limit: limits.cpuPercent
-                        });
-                        logger.warn(`Server ${instance.name}: CPU limit exceeded (${current.cpu.toFixed(1)}% > ${limits.cpuPercent}%)`);
-                        warns.cpu = 0;
-                    }
-                } else {
-                    warns.cpu = 0;
-                }
-
-                // Memory limit check
-                if (limits.memoryMB > 0 && current.memory > limits.memoryMB) {
-                    warns.memory++;
-                    if (warns.memory >= this.WARN_THRESHOLD) {
-                        this.emit('limit-exceeded', {
-                            serverId: id,
-                            resource: 'memory',
-                            current: current.memory,
-                            limit: limits.memoryMB
-                        });
-                        logger.warn(`Server ${instance.name}: Memory limit exceeded (${current.memory.toFixed(0)}MB > ${limits.memoryMB}MB)`);
-                        warns.memory = 0;
-                    }
-                } else {
-                    warns.memory = 0;
-                }
-
-                // Disk limit check
-                if (limits.diskMB > 0 && current.disk > limits.diskMB) {
+            // CPU limit check
+            if (limits.cpuPercent > 0 && current.cpu > limits.cpuPercent) {
+                warns.cpu++;
+                if (warns.cpu >= this.WARN_THRESHOLD) {
                     this.emit('limit-exceeded', {
                         serverId: id,
-                        resource: 'disk',
-                        current: current.disk,
-                        limit: limits.diskMB
+                        resource: 'cpu',
+                        current: current.cpu,
+                        limit: limits.cpuPercent
                     });
-                    logger.warn(`Server ${instance.name}: Disk limit exceeded (${current.disk.toFixed(0)}MB > ${limits.diskMB}MB)`);
+                    logger.warn(`Server ${instance.name}: CPU limit exceeded (${current.cpu.toFixed(1)}% > ${limits.cpuPercent}%)`);
+                    warns.cpu = 0;
                 }
-
-            } catch (e) {
-                // Process may have just stopped
+            } else {
+                warns.cpu = 0;
             }
+
+            // Memory limit check
+            if (limits.memoryMB > 0 && current.memory > limits.memoryMB) {
+                warns.memory++;
+                if (warns.memory >= this.WARN_THRESHOLD) {
+                    this.emit('limit-exceeded', {
+                        serverId: id,
+                        resource: 'memory',
+                        current: current.memory,
+                        limit: limits.memoryMB
+                    });
+                    logger.warn(`Server ${instance.name}: Memory limit exceeded (${current.memory.toFixed(0)}MB > ${limits.memoryMB}MB)`);
+                    warns.memory = 0;
+                }
+            } else {
+                warns.memory = 0;
+            }
+
+            // Disk limit check
+            if (limits.diskMB > 0 && current.disk > limits.diskMB) {
+                this.emit('limit-exceeded', {
+                    serverId: id,
+                    resource: 'disk',
+                    current: current.disk,
+                    limit: limits.diskMB
+                });
+                logger.warn(`Server ${instance.name}: Disk limit exceeded (${current.disk.toFixed(0)}MB > ${limits.diskMB}MB)`);
+            }
+
+        } catch (e) {
+            // Process may have just stopped
         }
     }
 
@@ -151,18 +164,20 @@ class ResourceLimiter extends EventEmitter {
 
         try {
             if (process.platform === 'win32') {
-                // tasklist for memory (always available on Windows). execFileSync
+                // tasklist for memory (always available on Windows). execFile
                 // does not spawn a shell, so no argument can be interpreted as
                 // a shell metacharacter even if the pid validator were ever
-                // weakened.
+                // weakened. Async so the 10-server loop doesn't block the
+                // event loop for several seconds at a time.
                 let memoryMB = 0;
                 try {
-                    const memOutput = execFileSync(
+                    const { stdout: memOutput } = await execFileAsync(
                         'tasklist',
                         ['/FI', `PID eq ${safe}`, '/FO', 'CSV', '/NH'],
                         { timeout: 5000, encoding: 'utf-8', windowsHide: true }
-                    ).trim();
-                    const fields = memOutput.match(/"[^"]*"/g);
+                    );
+                    const trimmed = memOutput.trim();
+                    const fields = trimmed.match(/"[^"]*"/g);
                     if (fields && fields.length >= 5) {
                         const memField = fields[fields.length - 1].replace(/"/g, '');
                         const memKB = parseInt(memField.replace(/\D/g, '')) || 0;
@@ -172,12 +187,12 @@ class ResourceLimiter extends EventEmitter {
 
                 let cpu = 0;
                 try {
-                    const cpuOutput = execFileSync(
+                    const { stdout: cpuOutput } = await execFileAsync(
                         'powershell',
                         ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${safe} -ErrorAction SilentlyContinue).CPU`],
                         { timeout: 5000, encoding: 'utf-8', windowsHide: true }
-                    ).trim();
-                    const cpuTime = parseFloat(cpuOutput) || 0;
+                    );
+                    const cpuTime = parseFloat(cpuOutput.trim()) || 0;
                     const prevKey = `cpu_${safe}`;
                     const prevTime = this._cpuPrev?.get(prevKey);
                     const now = Date.now();
@@ -200,11 +215,12 @@ class ResourceLimiter extends EventEmitter {
 
                 return { cpu, memory: memoryMB };
             } else {
-                const output = execFileSync(
+                const { stdout } = await execFileAsync(
                     'ps',
                     ['-p', safe, '-o', '%cpu,rss', '--no-headers'],
                     { timeout: 5000, encoding: 'utf-8' }
-                ).trim();
+                );
+                const output = stdout.trim();
                 const [cpuStr, rssStr] = output.split(/\s+/);
                 return {
                     cpu: parseFloat(cpuStr) || 0,

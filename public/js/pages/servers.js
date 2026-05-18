@@ -102,7 +102,7 @@ export async function render(container) {
         <section class="space-y-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold tracking-tight">Servers</h1>
+                    <h1 class="page-title">Servers</h1>
                     <p class="mt-1 text-sm text-muted-foreground" data-servers-summary>${servers.length} server${servers.length !== 1 ? 's' : ''} &middot; ${onlineServers} running &middot; ${totalPlayers} player${totalPlayers !== 1 ? 's' : ''}</p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -160,33 +160,39 @@ export async function render(container) {
     // Wire import button
     container.querySelector('#importServerBtn')?.addEventListener('click', () => showImportModal(container));
 
-    // Wire bulk actions
-    container.querySelector('#bulkStartAll')?.addEventListener('click', async () => {
-        const stopped = serversState.filter(s => s.status === 'stopped');
-        if (stopped.length === 0) { showToast('No stopped servers to start', 'info'); return; }
-        showToast(`Starting ${stopped.length} server${stopped.length > 1 ? 's' : ''}...`, 'info');
-        for (const s of stopped) {
-            try { await api.post(`/servers/${encodeURIComponent(s.id)}/start`); }
-            catch (e) { showToast(`Failed to start ${s.name || s.id}: ${e.message}`, 'error'); }
+    // Bulk action helper — confirm before touching multiple servers so a
+    // misclick doesn't take everything offline at once.
+    const bulkAction = (action, label, btnClass, filterFn) => {
+        const affected = serversState.filter(filterFn);
+        if (affected.length === 0) {
+            showToast(`No servers to ${action}`, 'info');
+            return;
         }
+        const listMarkup = affected.slice(0, 8).map(s => `<li class="text-xs">${escapeHtml(s.name || s.id)}</li>`).join('');
+        const extra = affected.length > 8 ? `<li class="text-xs text-muted-foreground">…and ${affected.length - 8} more</li>` : '';
+        showModal(`${label} ${affected.length} server${affected.length > 1 ? 's' : ''}?`, `
+            <p class="mb-2 text-sm">This will ${action} the following servers:</p>
+            <ul class="list-disc pl-5 space-y-0.5">${listMarkup}${extra}</ul>
+        `, [
+            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+            { id: 'confirm', label: `${label} ${affected.length}`, class: btnClass, onClick: async () => {
+                showToast(`${label}ing ${affected.length} server${affected.length > 1 ? 's' : ''}...`, 'info');
+                for (const s of affected) {
+                    try { await api.post(`/servers/${encodeURIComponent(s.id)}/${action}`); }
+                    catch (e) { showToast(`Failed to ${action} ${s.name || s.id}: ${e.message}`, 'error'); }
+                }
+            }}
+        ]);
+    };
+
+    container.querySelector('#bulkStartAll')?.addEventListener('click', () => {
+        bulkAction('start', 'Start', 'btn-primary', s => s.status === 'stopped');
     });
-    container.querySelector('#bulkStopAll')?.addEventListener('click', async () => {
-        const running = serversState.filter(s => s.status === 'running');
-        if (running.length === 0) { showToast('No running servers to stop', 'info'); return; }
-        showToast(`Stopping ${running.length} server${running.length > 1 ? 's' : ''}...`, 'info');
-        for (const s of running) {
-            try { await api.post(`/servers/${encodeURIComponent(s.id)}/stop`); }
-            catch (e) { showToast(`Failed to stop ${s.name || s.id}: ${e.message}`, 'error'); }
-        }
+    container.querySelector('#bulkStopAll')?.addEventListener('click', () => {
+        bulkAction('stop', 'Stop', 'btn-danger', s => s.status === 'running');
     });
-    container.querySelector('#bulkRestartAll')?.addEventListener('click', async () => {
-        const running = serversState.filter(s => s.status === 'running');
-        if (running.length === 0) { showToast('No running servers to restart', 'info'); return; }
-        showToast(`Restarting ${running.length} server${running.length > 1 ? 's' : ''}...`, 'info');
-        for (const s of running) {
-            try { await api.post(`/servers/${encodeURIComponent(s.id)}/restart`); }
-            catch (e) { showToast(`Failed to restart ${s.name || s.id}: ${e.message}`, 'error'); }
-        }
+    container.querySelector('#bulkRestartAll')?.addEventListener('click', () => {
+        bulkAction('restart', 'Restart', 'btn-primary', s => s.status === 'running');
     });
 
     // Wire server cards

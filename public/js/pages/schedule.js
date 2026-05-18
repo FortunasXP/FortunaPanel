@@ -11,13 +11,24 @@ export async function render(container) {
     let servers = [];
     let networks = [];
 
-    try {
-        [{ tasks }, servers, networks] = await Promise.all([
-            api.get('/schedule'),
-            api.get('/servers'),
-            api.get('/networks')
-        ]);
-    } catch (e) {}
+    // Settle each request independently so one slow/failing endpoint
+    // doesn't leave the others undefined. Previously a bare Promise.all
+    // + bare destructure would either crash on a null response or
+    // silently leave us rendering an empty page with no feedback.
+    const [scheduleRes, serversRes, networksRes] = await Promise.allSettled([
+        api.get('/schedule'),
+        api.get('/servers'),
+        api.get('/networks')
+    ]);
+    if (scheduleRes.status === 'fulfilled' && scheduleRes.value && Array.isArray(scheduleRes.value.tasks)) {
+        tasks = scheduleRes.value.tasks;
+    }
+    if (serversRes.status === 'fulfilled' && Array.isArray(serversRes.value)) {
+        servers = serversRes.value;
+    }
+    if (networksRes.status === 'fulfilled' && Array.isArray(networksRes.value)) {
+        networks = networksRes.value;
+    }
 
     const networkTypeLabels = {
         network_start: 'Network Start',
@@ -35,7 +46,7 @@ export async function render(container) {
         <section class="space-y-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 class="text-2xl font-semibold tracking-tight">Scheduled Tasks</h1>
+                    <h1 class="page-title">Scheduled Tasks</h1>
                     <p class="mt-1 text-sm text-muted-foreground">Automate server and network operations on a timer</p>
                 </div>
                 <button class="inline-flex items-center gap-2 rounded-md btn-primary px-4 py-2 text-xs font-semibold uppercase tracking-wide transition" id="createTask">
@@ -141,12 +152,21 @@ export async function render(container) {
     });
 
     container.querySelectorAll('[data-delete]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            try {
-                await api.del(`/schedule/${encodeURIComponent(btn.dataset.delete)}`);
-                showToast('Task deleted', 'success');
-                render(container);
-            } catch (e) { showToast(e.message, 'error'); }
+        btn.addEventListener('click', () => {
+            const taskId = btn.dataset.delete;
+            showModal('Delete Scheduled Task', `
+                <p>Delete this scheduled task?</p>
+                <p class="text-xs text-muted-foreground mt-1.5">The task will stop running. This cannot be undone.</p>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                    try {
+                        await api.del(`/schedule/${encodeURIComponent(taskId)}`);
+                        showToast('Task deleted', 'success');
+                        render(container);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
         });
     });
 }

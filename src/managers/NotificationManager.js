@@ -50,10 +50,64 @@ class NotificationManager {
         return { ...this.settings };
     }
 
+    // Whitelisted event keys — only fields we know about are accepted.
+    // Anything else in the incoming body is silently dropped.
+    _ALLOWED_EVENTS = ['serverStart', 'serverStop', 'serverCrash', 'playerJoin', 'playerLeave', 'backupComplete', 'scheduledTask'];
+
     updateSettings(newSettings) {
-        this.settings = { ...this.settings, ...newSettings };
+        if (!newSettings || typeof newSettings !== 'object') return this.settings;
+        const incoming = newSettings.discord || {};
+
+        // Only accept the fields we expose. Avoids mass-assignment of
+        // arbitrary keys (e.g. an attacker setting `__proto__` or future
+        // internal fields).
+        const next = {
+            enabled: typeof incoming.enabled === 'boolean' ? incoming.enabled : this.settings.discord.enabled,
+            webhookUrl: this.settings.discord.webhookUrl,
+            events: { ...this.settings.discord.events }
+        };
+
+        // Webhook URL: must be a Discord webhook URL. Validate scheme and
+        // host to prevent SSRF — the panel POSTs JSON with server names,
+        // player names, etc., and the response body is logged on error.
+        if (incoming.webhookUrl !== undefined) {
+            const url = String(incoming.webhookUrl || '').trim();
+            if (url === '') {
+                next.webhookUrl = '';
+            } else if (!NotificationManager._isAllowedWebhookUrl(url)) {
+                throw new Error('Webhook URL must be a Discord webhook URL (https://discord.com/api/webhooks/...)');
+            } else {
+                next.webhookUrl = url;
+            }
+        }
+
+        // Events: only known boolean keys. Drops everything else.
+        if (incoming.events && typeof incoming.events === 'object') {
+            for (const key of this._ALLOWED_EVENTS) {
+                if (key in incoming.events) {
+                    next.events[key] = !!incoming.events[key];
+                }
+            }
+        }
+
+        this.settings = { discord: next };
         this._save();
         return this.settings;
+    }
+
+    // Strict Discord-webhook allowlist. We do not currently support custom
+    // webhook destinations; if/when we do, expand this with proper SSRF
+    // protection (DNS resolution + private-range checks).
+    static _isAllowedWebhookUrl(rawUrl) {
+        let url;
+        try { url = new URL(rawUrl); } catch (_) { return false; }
+        if (url.protocol !== 'https:') return false;
+        const host = url.hostname.toLowerCase();
+        if (host !== 'discord.com' && host !== 'discordapp.com' && host !== 'canary.discord.com' && host !== 'ptb.discord.com') {
+            return false;
+        }
+        if (!url.pathname.startsWith('/api/webhooks/')) return false;
+        return true;
     }
 
     /**

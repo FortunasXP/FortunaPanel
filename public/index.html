@@ -12,9 +12,10 @@
     <link rel="stylesheet" href="/css/components.css">
 </head>
 <body class="dark antialiased">
+    <a href="#content" class="skip-to-content">Skip to main content</a>
     <div class="sidebar-shell" data-sidebar-state="expanded">
         <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
+        <aside class="sidebar" id="sidebar" aria-label="Main navigation">
             <!-- Header: brand button -->
             <div class="sidebar-header">
                 <a href="/" class="sidebar-brand" data-page="dashboard">
@@ -149,20 +150,20 @@
         <main class="main">
             <!-- Top Bar -->
             <header class="topbar">
-                <button class="sidebar-trigger" id="sidebarTrigger" aria-label="Toggle sidebar">
+                <button class="sidebar-trigger" id="sidebarTrigger" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                 </button>
                 <div class="topbar-separator"></div>
-                <div class="breadcrumbs" id="breadcrumbs">
+                <div class="breadcrumbs min-w-0 truncate" id="breadcrumbs">
                     <span>Dashboard</span>
                 </div>
                 <div class="topbar-actions">
-                    <span class="topbar-user" id="topbarUser">admin</span>
+                    <span class="topbar-user hidden sm:inline" id="topbarUser">admin</span>
                 </div>
             </header>
 
             <!-- Page Content -->
-            <div class="content" id="content">
+            <div class="content" id="content" tabindex="-1">
                 <div class="page-loading">
                     <div class="spinner"></div>
                 </div>
@@ -171,7 +172,7 @@
     </div>
 
     <!-- Mobile backdrop -->
-    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>

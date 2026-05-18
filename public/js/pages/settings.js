@@ -1,6 +1,6 @@
 // FortunaPanel - Settings Page
 import { api } from '../api.js';
-import { showToast, showModal, escapeHtml } from '../app.js';
+import { showToast, showModal, escapeHtml, safeHref } from '../app.js';
 
 export function breadcrumbs() {
     return [{ label: 'Settings', href: '/settings' }];
@@ -23,16 +23,16 @@ export async function render(container) {
                 </div>
                 <div class="settings-card-body">
                     <div class="form-group">
-                        <label class="form-label">Current Password</label>
-                        <input type="password" class="form-input" id="currentPassword" placeholder="Enter current password">
+                        <label class="form-label" for="currentPassword">Current Password</label>
+                        <input type="password" class="form-input" id="currentPassword" autocomplete="current-password" placeholder="Enter current password">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">New Password</label>
-                        <input type="password" class="form-input" id="newPassword" placeholder="Enter new password">
+                        <label class="form-label" for="newPassword">New Password</label>
+                        <input type="password" class="form-input" id="newPassword" autocomplete="new-password" placeholder="Enter new password">
                     </div>
                     <div class="form-group mb-0">
-                        <label class="form-label">Confirm New Password</label>
-                        <input type="password" class="form-input" id="confirmPassword" placeholder="Confirm new password">
+                        <label class="form-label" for="confirmPassword">Confirm New Password</label>
+                        <input type="password" class="form-input" id="confirmPassword" autocomplete="new-password" placeholder="Confirm new password">
                     </div>
                 </div>
                 <div class="settings-card-footer">
@@ -55,7 +55,7 @@ export async function render(container) {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Webhook URL</label>
-                        <input type="text" class="form-input" id="webhookUrl" value="${notifSettings?.discord?.webhookUrl || ''}" placeholder="https://discord.com/api/webhooks/...">
+                        <input type="text" class="form-input" id="webhookUrl" value="${escapeHtml(notifSettings?.discord?.webhookUrl || '')}" placeholder="https://discord.com/api/webhooks/...">
                     </div>
                     <div class="section-title mb-3">Events</div>
                     <div class="flex flex-col gap-2">
@@ -167,6 +167,56 @@ export async function render(container) {
                 </div>
             </div>
 
+            <!-- Proxy Routes -->
+            <div class="settings-card">
+                <div class="settings-card-header settings-card-header-row">
+                    <div>
+                        <h2 class="settings-card-title">Proxy Routes</h2>
+                        <p class="settings-card-desc">TCP reverse proxy for routing traffic to servers</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="addProxyRoute">Add Route</button>
+                </div>
+                <div id="proxyRoutesList" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- SSL / TLS -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">SSL / TLS</h2>
+                    <p class="settings-card-desc">Secure panel access with HTTPS</p>
+                </div>
+                <div id="sslStatus" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- Docker -->
+            <div class="settings-card">
+                <div class="settings-card-header">
+                    <h2 class="settings-card-title">Docker</h2>
+                    <p class="settings-card-desc">Run servers in isolated containers</p>
+                </div>
+                <div id="dockerStatus" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- Remote Nodes -->
+            <div class="settings-card">
+                <div class="settings-card-header settings-card-header-row">
+                    <div>
+                        <h2 class="settings-card-title">Remote Nodes</h2>
+                        <p class="settings-card-desc">Manage servers across multiple machines</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="addNode">Add Node</button>
+                </div>
+                <div id="nodesList" class="settings-card-body">
+                    <div class="page-loading p-3"><div class="spinner"></div></div>
+                </div>
+            </div>
+
             <!-- Panel Information Section -->
             <div class="settings-card">
                 <div class="settings-card-header">
@@ -230,7 +280,7 @@ export async function render(container) {
             const info = container.querySelector('#updateInfo');
             if (row && info) {
                 row.style.display = '';
-                info.innerHTML = `<a href="${escapeHtml(status.releaseUrl || '#')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
+                info.innerHTML = `<a href="${escapeHtml(safeHref(status.releaseUrl))}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
             }
         }
     }).catch(() => {});
@@ -247,7 +297,7 @@ export async function render(container) {
                 const info = container.querySelector('#updateInfo');
                 if (row && info) {
                     row.style.display = '';
-                    info.innerHTML = `<a href="${escapeHtml(status.releaseUrl || '#')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
+                    info.innerHTML = `<a href="${escapeHtml(safeHref(status.releaseUrl))}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">v${escapeHtml(status.latestVersion)} available</a>`;
                 }
                 showToast(`Update available: v${status.latestVersion}`, 'info');
             } else {
@@ -342,6 +392,12 @@ export async function render(container) {
 
     // Load DNS providers
     loadDnsProviders(container);
+
+    // Load infrastructure sections
+    loadProxyRoutes(container);
+    loadSSLStatus(container);
+    loadDockerStatus(container);
+    loadNodes(container);
 
     // Add DNS provider
     container.querySelector('#addDnsProvider')?.addEventListener('click', () => {
@@ -682,8 +738,8 @@ async function load2FA(container) {
                     const result = await api.post('/2fa/setup');
                     showModal('Setup Two-Factor Authentication', `
                         <p class="mb-4 text-xs text-muted-foreground">Scan this QR code with your authenticator app, then enter the 6-digit code below.</p>
-                        ${result.qrCode ? `<div class="mb-4 text-center"><img src="${result.qrCode}" class="mx-auto h-[200px] w-[200px] rounded-lg border border-border bg-white p-1"></div>` : ''}
-                        <div class="mb-4 select-all rounded-lg border border-border bg-muted p-2.5 text-center font-mono text-xs tracking-[0.2em]">${result.secret}</div>
+                        ${result.qrCode ? `<div class="mb-4 text-center"><img src="${escapeHtml(result.qrCode)}" class="mx-auto h-[200px] w-[200px] rounded-lg border border-border bg-white p-1"></div>` : ''}
+                        <div class="mb-4 select-all rounded-lg border border-border bg-muted p-2.5 text-center font-mono text-xs tracking-[0.2em]">${escapeHtml(result.secret)}</div>
                         <div class="form-group mb-0">
                             <label class="form-label">Verification Code</label>
                             <input type="text" class="form-input text-center text-lg tracking-[0.3em]" id="verify2FACode" placeholder="Enter 6-digit code" maxlength="6">
@@ -698,7 +754,7 @@ async function load2FA(container) {
                                     showModal('Backup Codes', `
                                         <p class="mb-3 text-xs text-muted-foreground">Save these backup codes somewhere safe. Each can be used once.</p>
                                         <div class="grid grid-cols-2 gap-1.5 rounded-lg border border-border bg-muted p-3 font-mono text-sm">
-                                            ${verifyResult.backupCodes.map(c => `<div class="select-all">${c}</div>`).join('')}
+                                            ${verifyResult.backupCodes.map(c => `<div class="select-all">${escapeHtml(c)}</div>`).join('')}
                                         </div>
                                     `, [{ id: 'done', label: 'I Saved These', class: 'btn-primary' }]);
                                 }
@@ -756,12 +812,21 @@ async function loadApiKeys(container) {
         });
 
         list.querySelectorAll('[data-delete-key]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    await api.del(`/keys/${btn.dataset.deleteKey}`);
-                    showToast('API key deleted', 'success');
-                    loadApiKeys(container);
-                } catch (e) { showToast(e.message, 'error'); }
+            btn.addEventListener('click', () => {
+                const keyId = btn.dataset.deleteKey;
+                showModal('Delete API Key', `
+                    <p>Delete this API key?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">Any service using this key will lose access immediately. This cannot be undone.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/keys/${encodeURIComponent(keyId)}`);
+                            showToast('API key deleted', 'success');
+                            loadApiKeys(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
             });
         });
     } catch (e) {
@@ -882,6 +947,406 @@ function renderEventToggle(key, label, checked) {
             ${label}
         </label>
     `;
+}
+
+// --- Proxy Routes ---
+
+async function loadProxyRoutes(container) {
+    const list = container.querySelector('#proxyRoutesList');
+    if (!list) return;
+
+    try {
+        const routes = await api.get('/proxy/routes');
+        if (routes.length === 0) {
+            list.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">No proxy routes configured. Add a route to forward traffic to a server port.</div>`;
+        } else {
+            list.innerHTML = routes.map(r => `
+                <div class="list-item">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm font-medium">${escapeHtml(r.name)}</span>
+                        <span class="text-xs text-muted-foreground font-mono">:${escapeHtml(String(r.listenPort))} &rarr; ${escapeHtml(r.targetHost)}:${escapeHtml(String(r.targetPort))}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs ${r.active ? 'text-emerald-400' : 'text-muted-foreground'}">${r.active ? `Active (${escapeHtml(String(r.connections))} conn)` : 'Stopped'}</span>
+                        <button class="btn btn-sm btn-danger" data-delete-route="${escapeHtml(r.id)}">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+
+            list.querySelectorAll('[data-delete-route]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const routeId = btn.dataset.deleteRoute;
+                    showModal('Delete Proxy Route', `
+                        <p>Delete this proxy route?</p>
+                        <p class="text-xs text-muted-foreground mt-1.5">Active connections will be dropped.</p>
+                    `, [
+                        { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                        { id: 'delete', label: 'Delete', class: 'btn-danger', onClick: async () => {
+                            try {
+                                await api.del(`/proxy/routes/${encodeURIComponent(routeId)}`);
+                                showToast('Route deleted', 'success');
+                                loadProxyRoutes(container);
+                            } catch (e) { showToast(e.message, 'error'); }
+                        }}
+                    ]);
+                });
+            });
+        }
+    } catch (e) {
+        list.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e.message)}</div>`;
+    }
+
+    const addBtn = container.querySelector('#addProxyRoute');
+    if (addBtn && !addBtn.dataset.bound) {
+        addBtn.dataset.bound = '1';
+        addBtn.addEventListener('click', () => {
+            showModal('Add Proxy Route', `
+                <div class="form-group">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-input" id="proxyName" placeholder="e.g., Survival Proxy">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Listen Port</label>
+                    <input type="number" class="form-input" id="proxyListenPort" placeholder="25565">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Host</label>
+                    <input type="text" class="form-input" id="proxyTargetHost" value="127.0.0.1" placeholder="127.0.0.1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Port</label>
+                    <input type="number" class="form-input" id="proxyTargetPort" placeholder="25566">
+                </div>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'add', label: 'Add Route', class: 'btn-primary', onClick: async () => {
+                    const name = document.querySelector('#proxyName').value;
+                    const listenPort = parseInt(document.querySelector('#proxyListenPort').value);
+                    const targetHost = document.querySelector('#proxyTargetHost').value || '127.0.0.1';
+                    const targetPort = parseInt(document.querySelector('#proxyTargetPort').value);
+                    if (!listenPort || !targetPort) { showToast('Both ports are required', 'error'); return; }
+                    try {
+                        await api.post('/proxy/routes', { name, listenPort, targetHost, targetPort, enabled: true });
+                        showToast('Proxy route added', 'success');
+                        loadProxyRoutes(container);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
+        });
+    }
+}
+
+// --- SSL Status ---
+
+async function loadSSLStatus(container) {
+    const content = container.querySelector('#sslStatus');
+    if (!content) return;
+
+    try {
+        const status = await api.get('/proxy/ssl');
+        if (!status.enabled) {
+            content.innerHTML = `
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                        <div class="h-2 w-2 rounded-full bg-muted-foreground"></div>
+                        <span class="text-sm font-medium">SSL Disabled</span>
+                    </div>
+                    <p class="text-xs text-muted-foreground">Upload a custom certificate or configure Let's Encrypt for automatic HTTPS.</p>
+                    <div class="flex gap-2 mt-1">
+                        <button class="btn btn-sm btn-secondary" id="sslAutoBtn">Setup Let's Encrypt</button>
+                        <button class="btn btn-sm btn-secondary" id="sslCustomBtn">Upload Certificate</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            const cert = status.certInfo;
+            content.innerHTML = `
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                        <div class="h-2 w-2 rounded-full bg-emerald-500"></div>
+                        <span class="text-sm font-medium">SSL Enabled (${escapeHtml(status.mode)})</span>
+                    </div>
+                    ${status.domain ? `<div class="text-xs text-muted-foreground">Domain: <span class="font-mono text-foreground">${escapeHtml(status.domain)}</span></div>` : ''}
+                    ${cert ? `
+                        <div class="text-xs text-muted-foreground">
+                            <div>Valid until: <span class="text-foreground">${new Date(cert.validTo).toLocaleDateString()}</span></div>
+                            <div>Issuer: <span class="text-foreground">${escapeHtml(cert.issuer || 'Unknown')}</span></div>
+                        </div>
+                    ` : ''}
+                    ${status.hasCertificate ? `
+                        <button class="btn btn-sm btn-danger mt-1" id="sslDisableBtn">Disable SSL</button>
+                    ` : ''}
+                </div>
+            `;
+            content.querySelector('#sslDisableBtn')?.addEventListener('click', () => {
+                showModal('Disable SSL', `
+                    <p>Disable SSL on the panel?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">The panel will revert to HTTP. Any clients connected over HTTPS will need to reconnect.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'disable', label: 'Disable SSL', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.post('/proxy/ssl/disable');
+                            showToast('SSL disabled', 'success');
+                            loadSSLStatus(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
+            });
+        }
+
+        content.querySelector('#sslAutoBtn')?.addEventListener('click', () => {
+            showModal("Setup Let's Encrypt", `
+                <div class="form-group">
+                    <label class="form-label">Domain</label>
+                    <input type="text" class="form-input" id="sslDomain" placeholder="panel.example.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" id="sslEmail" placeholder="admin@example.com">
+                </div>
+                <p class="text-xs text-muted-foreground">Your domain must point to this server. Port 80 must be accessible for verification.</p>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'enable', label: 'Enable', class: 'btn-primary', onClick: async () => {
+                    const domain = document.querySelector('#sslDomain').value;
+                    const email = document.querySelector('#sslEmail').value;
+                    if (!domain || !email) { showToast('Domain and email required', 'error'); return; }
+                    try {
+                        await api.post('/proxy/ssl/auto', { domain, email });
+                        showToast('Auto-SSL configured', 'success');
+                        loadSSLStatus(container);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
+        });
+
+        content.querySelector('#sslCustomBtn')?.addEventListener('click', () => {
+            showModal('Upload SSL Certificate', `
+                <div class="form-group">
+                    <label class="form-label">Certificate (PEM)</label>
+                    <textarea class="form-input" id="sslCert" rows="4" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Private Key (PEM)</label>
+                    <textarea class="form-input" id="sslKey" rows="4" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">CA Bundle (optional)</label>
+                    <textarea class="form-input" id="sslCa" rows="3" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                </div>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'upload', label: 'Upload', class: 'btn-primary', onClick: async () => {
+                    const cert = document.querySelector('#sslCert').value;
+                    const key = document.querySelector('#sslKey').value;
+                    const ca = document.querySelector('#sslCa').value || undefined;
+                    if (!cert || !key) { showToast('Certificate and key are required', 'error'); return; }
+                    try {
+                        await api.post('/proxy/ssl/custom', { cert, key, ca });
+                        showToast('SSL certificate uploaded', 'success');
+                        loadSSLStatus(container);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
+        });
+    } catch (e) {
+        content.innerHTML = `<span class="text-xs text-muted-foreground">${escapeHtml(e.message)}</span>`;
+    }
+}
+
+// --- Docker Status ---
+
+async function loadDockerStatus(container) {
+    const content = container.querySelector('#dockerStatus');
+    if (!content) return;
+
+    try {
+        const status = await api.get('/docker/status');
+        if (!status.available) {
+            content.innerHTML = `
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center gap-2">
+                        <div class="h-2 w-2 rounded-full bg-muted-foreground"></div>
+                        <span class="text-sm font-medium">Docker Not Available</span>
+                    </div>
+                    <p class="text-xs text-muted-foreground">Docker is not installed or not running. Install Docker to enable container-based server isolation.</p>
+                </div>
+            `;
+        } else {
+            const info = status.info || {};
+            content.innerHTML = `
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                        <div class="h-2 w-2 rounded-full bg-emerald-500"></div>
+                        <span class="text-sm font-medium">Docker Available</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                        <div>Containers: <span class="text-foreground">${info.containers ?? '?'} (${info.containersRunning ?? 0} running)</span></div>
+                        <div>Images: <span class="text-foreground">${info.images ?? '?'}</span></div>
+                        <div>CPUs: <span class="text-foreground">${info.cpus ?? '?'}</span></div>
+                        <div>OS: <span class="text-foreground">${escapeHtml(info.os || '?')}</span></div>
+                    </div>
+                    <p class="text-xs text-muted-foreground">Enable Docker mode per-server in the server's Settings tab.</p>
+                </div>
+            `;
+        }
+    } catch (e) {
+        content.innerHTML = `<span class="text-xs text-muted-foreground">${escapeHtml(e.message)}</span>`;
+    }
+}
+
+// --- Remote Nodes ---
+
+async function loadNodes(container) {
+    const list = container.querySelector('#nodesList');
+    if (!list) return;
+
+    try {
+        const nodes = await api.get('/nodes');
+        const local = nodes.find(n => n.id === 'local');
+        const remote = nodes.filter(n => n.id !== 'local');
+
+        let html = '';
+
+        // Local node always shows
+        if (local) {
+            const mem = local.systemInfo;
+            const memGB = mem ? (mem.totalMemory / 1024 / 1024 / 1024).toFixed(1) : '?';
+            html += `
+                <div class="list-item">
+                    <div class="flex flex-col gap-0.5">
+                        <div class="flex items-center gap-2">
+                            <div class="h-2 w-2 rounded-full bg-emerald-500"></div>
+                            <span class="text-sm font-medium">${escapeHtml(local.name)}</span>
+                            <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">local</span>
+                        </div>
+                        <span class="text-xs text-muted-foreground ml-4">${local.serverCount} server${local.serverCount !== 1 ? 's' : ''} &middot; ${mem?.cpus ?? '?'} CPUs &middot; ${memGB} GB RAM</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Remote nodes
+        if (remote.length === 0) {
+            html += `<div class="px-5 py-3 text-xs text-muted-foreground">No remote nodes. Add a node and install the agent on a remote machine.</div>`;
+        } else {
+            for (const n of remote) {
+                const statusColor = n.status === 'online' ? 'bg-emerald-500' : n.status === 'error' ? 'bg-amber-500' : 'bg-muted-foreground';
+                html += `
+                    <div class="list-item">
+                        <div class="flex flex-col gap-0.5">
+                            <div class="flex items-center gap-2">
+                                <div class="h-2 w-2 rounded-full ${statusColor}"></div>
+                                <span class="text-sm font-medium">${escapeHtml(n.name)}</span>
+                                ${n.host ? `<span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(n.host)}</span>` : ''}
+                            </div>
+                            <span class="text-xs text-muted-foreground ml-4">${escapeHtml(n.status)} &middot; ${n.serverCount} server${n.serverCount !== 1 ? 's' : ''}${n.lastSeen ? ' &middot; last seen ' + new Date(n.lastSeen).toLocaleString() : ''}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button class="btn btn-sm btn-secondary" data-show-token="${escapeHtml(n.id)}" title="Show token">Token</button>
+                            <button class="btn btn-sm btn-danger" data-delete-node="${escapeHtml(n.id)}">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        list.innerHTML = html;
+
+        // Show token
+        list.querySelectorAll('[data-show-token]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    const node = await api.get(`/nodes/${btn.dataset.showToken}`);
+                    showModal('Agent Connection Token', `
+                        <p class="text-xs text-muted-foreground mb-3">Use this token when starting the agent on the remote machine:</p>
+                        <div class="rounded border border-border bg-muted p-3 font-mono text-xs break-all select-all">${escapeHtml(node.token)}</div>
+                        <div class="mt-3 flex gap-2">
+                            <button class="btn btn-sm btn-secondary" id="copyNodeToken">Copy</button>
+                            <button class="btn btn-sm btn-danger" id="regenNodeToken">Regenerate</button>
+                        </div>
+                    `, [{ label: 'Close', class: 'btn-secondary' }]);
+                    document.querySelector('#copyNodeToken')?.addEventListener('click', () => {
+                        navigator.clipboard.writeText(node.token);
+                        showToast('Token copied', 'success');
+                    });
+                    document.querySelector('#regenNodeToken')?.addEventListener('click', () => {
+                        showModal('Regenerate Token', `
+                            <p>Regenerate this node's connection token?</p>
+                            <p class="text-xs text-muted-foreground mt-1.5">The current agent will be disconnected and will need to be reconfigured with the new token.</p>
+                        `, [
+                            { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                            { id: 'regen', label: 'Regenerate', class: 'btn-danger', onClick: async () => {
+                                try {
+                                    await api.post(`/nodes/${encodeURIComponent(node.id)}/regenerate-token`);
+                                    showToast('Token regenerated', 'success');
+                                    loadNodes(container);
+                                } catch (e) { showToast(e.message, 'error'); }
+                            }}
+                        ]);
+                    });
+                } catch (e) { showToast(e.message, 'error'); }
+            });
+        });
+
+        // Delete node
+        list.querySelectorAll('[data-delete-node]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const nodeId = btn.dataset.deleteNode;
+                showModal('Remove Node', `
+                    <p>Remove this node from the panel?</p>
+                    <p class="text-xs text-muted-foreground mt-1.5">The agent on the remote machine will be disconnected. Servers running on the node will need to be migrated separately.</p>
+                `, [
+                    { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                    { id: 'remove', label: 'Remove Node', class: 'btn-danger', onClick: async () => {
+                        try {
+                            await api.del(`/nodes/${encodeURIComponent(nodeId)}`);
+                            showToast('Node removed', 'success');
+                            loadNodes(container);
+                        } catch (e) { showToast(e.message, 'error'); }
+                    }}
+                ]);
+            });
+        });
+    } catch (e) {
+        list.innerHTML = `<div class="px-5 py-4 text-xs text-muted-foreground">${escapeHtml(e.message)}</div>`;
+    }
+
+    const addNodeBtn = container.querySelector('#addNode');
+    if (addNodeBtn && !addNodeBtn.dataset.bound) {
+        addNodeBtn.dataset.bound = '1';
+        addNodeBtn.addEventListener('click', () => {
+            showModal('Register Remote Node', `
+                <div class="form-group">
+                    <label class="form-label">Node Name</label>
+                    <input type="text" class="form-input" id="nodeName" placeholder="e.g., EU VPS">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Host / IP</label>
+                    <input type="text" class="form-input" id="nodeHost" placeholder="e.g., 192.168.1.50">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description (optional)</label>
+                    <input type="text" class="form-input" id="nodeDesc" placeholder="e.g., 8-core dedicated server in Frankfurt">
+                </div>
+                <p class="text-xs text-muted-foreground">After registering, you'll receive a connection token to install on the remote machine.</p>
+            `, [
+                { id: 'cancel', label: 'Cancel', class: 'btn-secondary' },
+                { id: 'register', label: 'Register', class: 'btn-primary', onClick: async () => {
+                    const name = document.querySelector('#nodeName').value;
+                    const host = document.querySelector('#nodeHost').value;
+                    const description = document.querySelector('#nodeDesc').value;
+                    if (!name) { showToast('Node name required', 'error'); return; }
+                    try {
+                        const node = await api.post('/nodes', { name, host, description });
+                        showToast('Node registered! Copy the token from the Nodes list.', 'success');
+                        loadNodes(container);
+                    } catch (e) { showToast(e.message, 'error'); }
+                }}
+            ]);
+        });
+    }
 }
 
 export function destroy() {

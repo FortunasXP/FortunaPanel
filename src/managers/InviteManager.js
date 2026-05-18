@@ -56,6 +56,30 @@ class InviteManager {
         return invite;
     }
 
+    /**
+     * Atomically claim an invite — find it, mark used, and persist in one
+     * synchronous step. Node is single-threaded, so as long as no `await`
+     * runs between the find and the mutation, two concurrent redemption
+     * requests cannot both succeed. Returns a copy of the invite for the
+     * caller to use, or null if invalid/expired/already used.
+     *
+     * Use this in preference to redeemInvite + markInviteUsed when you
+     * are claiming the invite. Use redeemInvite alone only for read-only
+     * validity checks.
+     */
+    claimInvite(code, username) {
+        const invite = this._data.tokens.find(t =>
+            t.type === 'invite' && t.code === code && !t.used
+        );
+        if (!invite) return null;
+        if (new Date(invite.expiresAt) < new Date()) return null;
+        invite.used = true;
+        invite.usedBy = username || null;
+        invite.usedAt = new Date().toISOString();
+        this._save();
+        return { ...invite };
+    }
+
     markInviteUsed(code, username) {
         const invite = this._data.tokens.find(t =>
             t.type === 'invite' && t.code === code
@@ -127,6 +151,22 @@ class InviteManager {
         if (!token) return null;
         if (new Date(token.expiresAt) < new Date()) return null;
         return token;
+    }
+
+    /**
+     * Atomic claim for password-reset tokens. Same contract as
+     * claimInvite — find + mark + save in one synchronous step.
+     */
+    claimResetToken(code) {
+        const token = this._data.tokens.find(t =>
+            t.type === 'reset' && t.code === code && !t.used
+        );
+        if (!token) return null;
+        if (new Date(token.expiresAt) < new Date()) return null;
+        token.used = true;
+        token.usedAt = new Date().toISOString();
+        this._save();
+        return { ...token };
     }
 
     markResetUsed(code) {

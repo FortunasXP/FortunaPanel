@@ -10,6 +10,26 @@ const { detectServerConfig, isProxyType } = require('../services/serverDetector'
 const REGISTRY_PATH = path.join(config.dataDir, 'servers.json');
 const TEMPLATES_PATH = path.join(config.dataDir, 'templates.json');
 
+// Fields a client is allowed to set on an existing server via PATCH.
+// Anything not in this list is silently dropped to prevent mass-assignment
+// of internal fields like `directory`, `crashHistory`, or `id`.
+const UPDATABLE_FIELDS = new Set([
+    'name',
+    'port',
+    'memory',
+    'jvmArgs',
+    'maxPlayers',
+    'autoStart',
+    'autoRestart',
+    'maxAutoRestarts',
+    'crashCooldown',
+    'motd',
+    'gamemode',
+    'difficulty',
+    'resourceLimits',
+    'docker'
+]);
+
 class ServerManager extends EventEmitter {
     constructor() {
         super();
@@ -413,7 +433,17 @@ class ServerManager extends EventEmitter {
         const instance = this.servers.get(id);
         if (!instance) throw new Error('Server not found');
 
-        instance.updateConfig(updates);
+        // Allowlist what callers (HTTP API) can change. Internal fields
+        // like `directory`, `id`, `javaPath`, `jarFile`, `crashHistory`
+        // are out of band and must not be settable from request bodies.
+        const safe = {};
+        if (updates && typeof updates === 'object') {
+            for (const key of Object.keys(updates)) {
+                if (UPDATABLE_FIELDS.has(key)) safe[key] = updates[key];
+            }
+        }
+
+        instance.updateConfig(safe);
         await this.saveRegistry();
         return instance;
     }

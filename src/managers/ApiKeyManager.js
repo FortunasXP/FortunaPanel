@@ -134,13 +134,19 @@ class ApiKeyManager {
         if (keyEntry.type === 'application') return true;
 
         // Check server access
-        if (serverId && keyEntry.allowedServers.length > 0) {
+        if (serverId && keyEntry.allowedServers && keyEntry.allowedServers.length > 0) {
             if (!keyEntry.allowedServers.includes(serverId)) return false;
         }
 
-        // Check specific permission
-        if (keyEntry.permissions.length === 0) return true; // empty = all permissions
-        return keyEntry.permissions.includes(permission) || keyEntry.permissions.includes('*');
+        // Client keys need an EXPLICIT permission match. Empty permissions
+        // means "no permissions" (deny-by-default), not "all permissions".
+        // The previous behavior allowed privilege escalation: a user could
+        // create a client key with permissions=[] and bypass every check.
+        if (!Array.isArray(keyEntry.permissions) || keyEntry.permissions.length === 0) {
+            return false;
+        }
+        if (keyEntry.permissions.includes('*')) return true;
+        return keyEntry.permissions.includes(permission);
     }
 
     // List all keys (without sensitive data)

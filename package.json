@@ -1,6 +1,6 @@
 {
   "name": "fortunapanel",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Web-based Minecraft server management panel",
   "author": "Pedro Fortuna",
   "main": "electron/main.js",
@@ -11,6 +11,8 @@
     "css:watch": "npx tailwindcss -i ./src/css/globals.css -o ./public/css/tailwind.css --watch",
     "css:dev": "npx tailwindcss -i ./src/css/globals.css -o ./public/css/tailwind.css --watch & nodemon src/index.js",
     "test:security": "node scripts/security-smoke.mjs",
+    "test:unit": "node scripts/security-unit.mjs",
+    "test": "npm run test:unit && npm run test:security",
     "electron": "electron .",
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "build": "npm run css:build && electron-builder --win",
@@ -19,7 +21,7 @@
     "postinstall": "node -e \"try{require('child_process').execSync('npx --no-install electron-builder install-app-deps',{stdio:'inherit'})}catch(e){}\""
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",

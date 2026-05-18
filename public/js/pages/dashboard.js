@@ -1,12 +1,13 @@
 // FortunaPanel - Dashboard Overview Page
 import { api } from '../api.js';
 import { ws } from '../websocket.js';
-import { app, escapeHtml } from '../app.js';
-import { drawChart as drawSharedChart, getCSSColor } from '../components/chart.js';
+import { app, escapeHtml, safeHref } from '../app.js';
+import { drawMultiChart, getCSSColor } from '../components/chart.js';
 
 let statsListener = null;
 let serverStatusListener = null;
 let serverStatsListener = null;
+let playerUpdateListener = null;
 let serversState = [];
 let containerRef = null;
 
@@ -99,7 +100,7 @@ export async function render(container) {
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <a href="${escapeHtml(updateStatus.releaseUrl || '#')}" target="_blank" rel="noopener" class="btn btn-primary btn-sm no-underline">View Release</a>
+                    <a href="${escapeHtml(safeHref(updateStatus.releaseUrl))}" target="_blank" rel="noopener" class="btn btn-primary btn-sm no-underline">View Release</a>
                     <button class="btn btn-secondary btn-sm" id="dismissUpdate">Dismiss</button>
                 </div>
             </div>` : '';
@@ -108,7 +109,7 @@ export async function render(container) {
         <section class="space-y-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold tracking-tight">Dashboard</h1>
+                    <h1 class="page-title">Dashboard</h1>
                     <p class="mt-1 text-sm text-muted-foreground">System overview and server status</p>
                 </div>
                 <button class="btn btn-primary" id="createServerBtn">
@@ -119,17 +120,7 @@ export async function render(container) {
 
             ${updateBanner}
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div class="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/50">
-                    <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">CPU Usage</p>
-                    <p class="mt-2 text-3xl font-bold tracking-tight" id="cpuValue">${cpuPercent}%</p>
-                    <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(stats?.system?.cpu?.cores ?? '?')} cores</p>
-                </div>
-                <div class="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/50">
-                    <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Memory</p>
-                    <p class="mt-2 text-3xl font-bold tracking-tight" id="memValue">${memPercent}%</p>
-                    <p class="mt-1 text-xs text-muted-foreground" id="memSub">${formatBytes(memUsed)} / ${formatBytes(memTotal)}</p>
-                </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div class="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent/50">
                     <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Servers</p>
                     <p class="mt-2 text-3xl font-bold tracking-tight" id="serverCount">${servers.length}</p>
@@ -142,21 +133,24 @@ export async function render(container) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div class="rounded-lg border border-border bg-card p-5">
-                    <div class="mb-3 flex items-center justify-between">
-                        <span class="text-xs font-medium uppercase tracking-wider text-muted-foreground">CPU Usage</span>
-                        <span class="font-mono text-xs text-foreground" id="cpuChartValue">${cpuPercent}%</span>
+            <div class="rounded-lg border border-border bg-card p-5">
+                <div class="mb-3 flex items-center justify-between">
+                    <span class="text-xs font-medium uppercase tracking-wider text-muted-foreground">System Resources</span>
+                    <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1.5 text-xs">
+                            <span class="inline-block h-2 w-2 rounded-full" style="background:${getCSSColor('--chart-1', '#3b82f6')}"></span>
+                            <span class="text-muted-foreground">CPU</span>
+                            <span class="font-mono text-foreground" id="cpuChartValue">${cpuPercent}%</span>
+                        </span>
+                        <span class="flex items-center gap-1.5 text-xs">
+                            <span class="inline-block h-2 w-2 rounded-full" style="background:${getCSSColor('--chart-2', '#a855f7')}"></span>
+                            <span class="text-muted-foreground">Memory</span>
+                            <span class="font-mono text-foreground" id="memChartValue">${memPercent}%</span>
+                            <span class="text-muted-foreground ml-1" id="memSub">(${formatBytes(memUsed)} / ${formatBytes(memTotal)})</span>
+                        </span>
                     </div>
-                    <canvas id="cpuChart" class="chart-canvas"></canvas>
                 </div>
-                <div class="rounded-lg border border-border bg-card p-5">
-                    <div class="mb-3 flex items-center justify-between">
-                        <span class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Memory Usage</span>
-                        <span class="font-mono text-xs text-foreground" id="memChartValue">${memPercent}%</span>
-                    </div>
-                    <canvas id="memChart" class="chart-canvas"></canvas>
-                </div>
+                <canvas id="resourceChart" class="chart-canvas"></canvas>
             </div>
 
             <div class="flex items-center justify-between">
@@ -224,30 +218,30 @@ export async function render(container) {
         </section>
     `;
 
-    // Draw initial charts
+    // Draw initial combined chart
     const cpuHistory = stats?.system?.cpu?.history || [];
     const memHistory = stats?.system?.memory?.history || [];
-    drawChart('cpuChart', cpuHistory, getCSSColor('--chart-1', '#3b82f6'));
-    drawChart('memChart', memHistory, getCSSColor('--chart-2', '#a855f7'));
+    drawMultiChart('resourceChart', [
+        { data: cpuHistory, color: getCSSColor('--chart-1', '#3b82f6') },
+        { data: memHistory, color: getCSSColor('--chart-2', '#a855f7') }
+    ]);
 
     // Subscribe to real-time stats
     ws.subscribeStats();
     statsListener = (data) => {
         if (data.system) {
-            const cpuEl = container.querySelector('#cpuValue');
-            const memEl = container.querySelector('#memValue');
-            const memSub = container.querySelector('#memSub');
             const cpuChartVal = container.querySelector('#cpuChartValue');
             const memChartVal = container.querySelector('#memChartValue');
+            const memSub = container.querySelector('#memSub');
 
-            if (cpuEl) cpuEl.textContent = `${data.system.cpu.current}%`;
-            if (memEl) memEl.textContent = `${data.system.memory.current}%`;
-            if (memSub) memSub.textContent = `${formatBytes(data.system.memory.used)} / ${formatBytes(data.system.memory.total)}`;
             if (cpuChartVal) cpuChartVal.textContent = `${data.system.cpu.current}%`;
             if (memChartVal) memChartVal.textContent = `${data.system.memory.current}%`;
+            if (memSub) memSub.textContent = `(${formatBytes(data.system.memory.used)} / ${formatBytes(data.system.memory.total)})`;
 
-            drawChart('cpuChart', data.system.cpu.history, getCSSColor('--chart-1', '#3b82f6'));
-            drawChart('memChart', data.system.memory.history, getCSSColor('--chart-2', '#a855f7'));
+            drawMultiChart('resourceChart', [
+                { data: data.system.cpu.history, color: getCSSColor('--chart-1', '#3b82f6') },
+                { data: data.system.memory.history, color: getCSSColor('--chart-2', '#a855f7') }
+            ]);
         }
     };
     ws.on('system-stats', statsListener);
@@ -286,6 +280,30 @@ export async function render(container) {
     };
     ws.on('stats', serverStatsListener);
 
+    // Instant player count updates (join/leave)
+    playerUpdateListener = (msg) => {
+        if (!msg || !msg.serverId) return;
+        const entry = serversState.find(s => s.id === msg.serverId);
+        if (entry) {
+            if (!entry.players) entry.players = { online: 0, list: [], max: 20 };
+            if (msg.action === 'join') {
+                entry.players.online = (entry.players.online || 0) + 1;
+                if (!entry.players.list.includes(msg.player)) entry.players.list.push(msg.player);
+            } else if (msg.action === 'leave') {
+                entry.players.online = Math.max(0, (entry.players.online || 0) - 1);
+                entry.players.list = entry.players.list.filter(p => p !== msg.player);
+            }
+            if (msg.online !== undefined) entry.players.online = msg.online;
+            updateServerRow(entry);
+        }
+        // Update total
+        let total = 0;
+        for (const s of serversState) total += s.players?.online || 0;
+        const totalEl = container.querySelector('#totalPlayers');
+        if (totalEl) totalEl.textContent = String(total);
+    };
+    ws.on('player-update', playerUpdateListener);
+
     // Wire navigation
     container.querySelector('#createServerBtn')?.addEventListener('click', () => app.navigate('/create'));
     container.querySelector('#createServerBtn2')?.addEventListener('click', () => app.navigate('/create'));
@@ -318,13 +336,14 @@ export function destroy() {
         ws.off('stats', serverStatsListener);
         serverStatsListener = null;
     }
+    if (playerUpdateListener) {
+        ws.off('player-update', playerUpdateListener);
+        playerUpdateListener = null;
+    }
     containerRef = null;
     serversState = [];
 }
 
-function drawChart(canvasId, data, color) {
-    drawSharedChart(canvasId, data, color, { maxValue: 100 });
-}
 
 function formatBytes(bytes) {
     if (!bytes) return '0 B';

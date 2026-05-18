@@ -27,11 +27,13 @@ async function getStatus(path, token = null) {
 }
 
 async function main() {
-  const child = spawn('node', ['src/index.js'], {
+  // Note: do NOT pass shell:true with args — Node deprecates that pattern
+  // because the args aren't shell-escaped. Resolve `node` ourselves so
+  // Windows finds it without needing a shell.
+  const child = spawn(process.execPath, ['src/index.js'], {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-    shell: process.platform === 'win32'
+    windowsHide: true
   });
 
   child.stdout.on('data', () => {});
